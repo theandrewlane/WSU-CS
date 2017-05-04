@@ -1,0 +1,320 @@
+USE Lane_TRAMS;
+
+
+GO
+IF OBJECT_ID('sp_ProduceBill', 'P') IS NOT NULL
+    DROP PROCEDURE sp_ProduceBill;
+GO
+--Actually beginning #1 here
+--Drop it like it's hot, if it exists already!
+IF OBJECT_ID('sp_InsertPerson', 'P') IS NOT NULL
+	DROP PROCEDURE sp_InsertPerson;
+GO
+
+IF OBJECT_ID('sp_InsertReservation', 'P') IS NOT NULL
+	DROP PROCEDURE sp_InsertReservation;
+GO
+
+IF OBJECT_ID('sp_UpdatePrices', 'P') IS NOT NULL
+	DROP PROCEDURE sp_UpdatePrices;
+GO
+
+IF OBJECT_ID('sp_UpdateResDetail', 'P') IS NOT NULL
+	DROP PROCEDURE sp_UpdateResDetail;
+GO
+
+--Create the actual Proc - This function calls insertreservation after the personID is created
+CREATE PROCEDURE sp_InsertPerson (
+	@PersonFirst NVARCHAR(50)
+	,@PersonLast NVARCHAR(50)
+	,@PersonAddress VARCHAR(200)
+	,@PersonCity VARCHAR(50)
+	,@PersonState CHAR(2)
+	,@PersonPostalCode VARCHAR(10)
+	,@PersonCountry VARCHAR(20)
+	,@PersonPhone VARCHAR(20)
+	,@PersonEmail VARCHAR(200)
+	)
+AS
+DECLARE @PID INT
+	,@CurrDate DATE
+
+BEGIN
+	SET NOCOUNT ON
+
+	INSERT INTO PERSON (
+		PersonFirst
+		,PersonLast
+		,PersonAddress
+		,PersonCity
+		,PersonState
+		,PersonPostalCode
+		,PersonCountry
+		,PersonPhone
+		,PersonEmail
+		)
+	VALUES (
+		@PersonFirst
+		,@PersonLast
+		,@PersonAddress
+		,@PersonCity
+		,@PersonState
+		,@PersonPostalCode
+		,@PersonCountry
+		,@PersonPhone
+		,@PersonEmail
+		)
+
+	SELECT @PID = @@identity
+
+	SET @CurrDate = getdate()
+
+	EXEC sp_InsertReservation @CurrDate
+		,'A'
+		,@CurrDate
+		,3
+		,91.99
+		,99.99
+		,'asdlasd21312dsq'
+		,32
+		,@PID;
+END
+GO
+
+CREATE PROCEDURE sp_InsertReservation @ResDate SMALLDATETIME
+	,@ResStatus CHAR(1)
+	,@ResCheckInDate DATE
+	,@ResNights TINYINT
+	,@ResQuotedRate SMALLMONEY
+	,@ResDepositPaid SMALLMONEY
+	,@ResCCAuth VARCHAR(25)
+	,@UnitRateID SMALLINT
+	,@PersonID INT
+AS
+BEGIN
+	SET NOCOUNT ON
+
+	INSERT INTO RESERVATION (
+		ResDate
+		,ResStatus
+		,ResCheckInDate
+		,ResNights
+		,ResQuotedRate
+		,ResDepositPaid
+		,ResCCAuth
+		,UnitRateID
+		,PersonID
+		)
+	VALUES (
+		@ResDate
+		,@ResStatus
+		,@ResCheckInDate
+		,@ResNights
+		,@ResQuotedRate
+		,@ResDepositPaid
+		,@ResCCAuth
+		,@UnitRateID
+		,@PersonID
+		)
+END
+GO
+
+EXEC sp_InsertPerson 'Andrew'
+	,'asdasda'
+	,'123 ASD'
+	,'SLC'
+	,'UT'
+	,'85213'
+	,'USA'
+	,'4809119111'
+	,'asdasd@msn.com';
+GO
+
+--1B
+PRINT 'Showing everything from Person and Reservation tables';
+GO
+
+SELECT *
+FROM PERSON;
+
+SELECT *
+FROM RESERVATION;
+GO
+
+PRINT 'Beginning #2 - Create stored procedure will update rates given a PropertyId and a change percentage';
+GO
+
+CREATE PROCEDURE sp_UpdatePrices @PropID SMALLINT
+	,@PriceChange DECIMAL(3, 3)
+AS
+BEGIN
+	DECLARE @begDate AS DATE
+		,@endDate AS DATE;
+
+	SET NOCOUNT ON;
+	SET @begDate = (
+			SELECT TOP 1 UnitRateBeginDate
+			FROM UNITRATE
+			WHERE PropertyID = @PropID
+			);
+	SET @endDate = (
+			SELECT TOP 1 UnitRateEndDate
+			FROM UNITRATE
+			WHERE PropertyID = @PropID
+			);
+
+	IF (
+			getdate() BETWEEN @begDate
+				AND @endDate
+			)
+	BEGIN
+		UPDATE UNITRATE
+		SET UNITRATE = CASE 
+				WHEN @PriceChange > 0
+				--When the unit rate is pos add the increase rate amount to the original rate
+					THEN FLOOR((UNITRATE * @PriceChange) + UNITRATE)
+					--When the unit rate is negative subtrace the decreased amount from the original rate
+				ELSE CEILING(UNITRATE - (UNITRATE * @PriceChange))
+				END
+		WHERE PropertyID = @PropID;
+	END
+END
+GO
+
+
+
+--2A
+EXECUTE sp_UpdatePrices 10000
+	,-.0666;
+GO
+
+--2B
+SELECT *
+FROM UNITRATE
+WHERE PropertyID = 10000;
+GO
+
+--2c
+EXECUTE sp_UpdatePrices 17000
+	,.05;
+GO
+
+--2d
+SELECT *
+FROM UNITRATE
+WHERE PropertyID = 17000;
+
+PRINT 'Beginning #3 - Create a stored procdure that can update reservations based on a combination of check-in date, number of nights, and/or status';
+
+--3
+GO
+CREATE PROCEDURE sp_UpdateResDetail 
+@ResId int,
+@ChkInDate date = '1910-10-10',
+@Nights tinyint = 999,
+@Status char(1) = 'z'
+AS
+BEGIN
+	SET NOCOUNT ON
+	IF NOT EXISTS (SELECT DISTINCT ReservationID FROM RESERVATION WHERE ReservationID = @ResId)
+	BEGIN
+	RAISERROR('The ReservationID you specified: %d is invalid. No rows were updated.' ,18,1, @ResId)
+	RETURN -1
+	END
+	ELSE
+	BEGIN
+	IF (cast(sql_variant_property(@Nights,'BaseType') as varchar(20))  = 'tinyInt' AND @Nights != 999  AND @Nights!= NULL)
+	BEGIN
+	UPDATE RESERVATION
+		SET ResNights = @Nights
+		WHERE ReservationID = @ResId
+	END
+	IF(cast(sql_variant_property(@Status,'BaseType') as varchar(20))  = 'char' AND @Status != 'z'  AND @Status!= NULL)
+	BEGIN
+	UPDATE RESERVATION
+	SET ResStatus = @Status
+	WHERE ReservationID = @ResId
+	END
+	IF(cast(sql_variant_property(@ChkInDate,'BaseType') as varchar(20))  = 'date' AND @ChkInDate != '1910-10-10' AND @ChkInDate!= NULL)
+	BEGIN
+	UPDATE RESERVATION
+	SET ResCheckInDate = @ChkInDate
+	WHERE ReservationID = @ResId
+	END
+	END
+	END
+GO
+
+PRINT '#3A - Updating Reservation # 12. Changing ResNights to 4, ResCheckInDate to 09/01/2017 and ResStatus to X!!';
+GO
+EXEC sp_UpdateResDetail 12, '2017-09-01' , '4', 'X';
+GO
+PRINT '#3b - Updating Reservation #2. Changing ResNights to 37!';
+GO
+EXEC sp_UpdateResDetail 2, NULL , 37, NULL;
+GO
+PRINT '#3c - Triggering Error in sp_UpdateResDetail by passing in a ResID that does not exist';
+GO
+EXEC sp_UpdateResDetail 10000002, '2017-09-01' , '4', 'X';
+
+
+GO
+PRINT 'Beginning #4 - Creating stored procedure sp_ProduceBill that takes in the FolioID and returns the GuestName, Unit Number, checkin/checkout dates';
+
+
+GO
+
+CREATE PROCEDURE sp_ProduceBill
+@FolID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @PersonFN AS NVARCHAR (50);
+    DECLARE @PersonLN AS NVARCHAR (50);
+    DECLARE @CkInDate AS SMALLDATETIME;
+    DECLARE @CkOutDate AS SMALLDATETIME;
+    DECLARE @UnitNo AS VARCHAR (5);
+    IF NOT EXISTS (SELECT DISTINCT FolioID
+                   FROM   FOLIO
+                   WHERE  FolioID = @FolID)
+        BEGIN
+            RAISERROR ('The FolioID you specified: %d does not exist or contain any information', 3, 1, @FolID);
+        END
+    DECLARE FolioCursor CURSOR
+        FOR SELECT p.PersonLast,
+                   p.PersonFirst,
+                   u.UnitNumber,
+                   f.FolioCheckInDate,
+                   f.FolioCheckOutDate
+            FROM   FOLIO AS f
+                   INNER JOIN
+                   RESERVATION AS r
+                   ON r.ReservationID = f.ReservationID
+                   INNER JOIN
+                   PERSON AS p
+                   ON p.PersonID = r.PersonID
+                   INNER JOIN
+                   UNITOWNER AS uo
+                   ON uo.PersonID = p.PersonID
+                   INNER JOIN
+                   UNIT AS u
+                   ON u.UnitID = uo.UnitID
+            WHERE  f.FolioID = @FolID;
+    OPEN FolioCursor;
+    FETCH NEXT FROM FolioCursor INTO @PersonFN, @PersonLN, @CkInDate, @CkOutDate, @UnitNo;
+    WHILE @@FETCH_STATUS = 0
+        BEGIN
+            PRINT 'Guest' + CONCAT(@PersonFN, ', ', @PersonLN);
+            PRINT 'Unit Number:     ' + @UnitNo;
+           PRINT 'Check-in Date:   ' + CONVERT (VARCHAR, @CkInDate, 101);
+            PRINT 'Check-Out Date:   ' + CONVERT (VARCHAR, @CkInDate, 101);
+        END
+    CLOSE FolioCursor;
+    DEALLOCATE FolioCursor;
+END
+
+
+GO
+PRINT '#4 - Triggering Error in sp_ProduceBill by passing in a FolioID that does not exist';
+EXECUTE sp_ProduceBill 33333;
+

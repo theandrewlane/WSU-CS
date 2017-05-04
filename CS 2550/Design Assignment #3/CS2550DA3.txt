@@ -1,0 +1,222 @@
+/* 
+ * Andrew Lane 
+ * CS2550 
+ * Design Assignment #3 (Final) :) 
+ * 12/6/15 
+*/ 
+
+--1 
+--Creating Schools Table 
+CREATE TABLE Schools 
+  ( 
+     school VARCHAR(25) PRIMARY KEY, 
+     city   VARCHAR(25) NOT NULL, 
+     coach  VARCHAR(25) NOT NULL 
+  ); 
+--Creating Teams Table 
+CREATE TABLE Teams 
+  ( 
+     team_id   VARCHAR(25) PRIMARY KEY, 
+     school    VARCHAR(25) NOT NULL, 
+     team_name VARCHAR(25) NOT NULL, 
+     wins      INT, 
+     losses    INT, 
+     CONSTRAINT FK_school FOREIGN KEY (school) REFERENCES Schools(school) 
+  ); 
+--Creating Players Table 
+CREATE TABLE Players 
+  ( 
+     uniform_number INT, 
+     player_name    VARCHAR(25) NOT NULL, 
+     team_id        VARCHAR(25), 
+     PRIMARY KEY(uniform_number, player_name), 
+     CONSTRAINT FK_p_teams FOREIGN KEY (team_id) REFERENCES Teams(team_id) 
+  ); 
+--Creating Games Table 
+CREATE TABLE Games 
+  ( 
+     team_id     VARCHAR(25) NOT NULL, 
+     game_date   DATE NOT NULL, 
+     home_score  INT, 
+     away_score  INT, 
+     game_result CHAR(1) NOT NULL, 
+     PRIMARY KEY(team_id, game_date), 
+     CONSTRAINT FK_g_teams FOREIGN KEY (team_id) REFERENCES Teams(team_id) 
+  ); 
+
+--2 
+--Populate Schools Table 
+INSERT INTO Schools 
+VALUES     ('Weber', 
+            'Pleasant View', 
+            'Corbridge'); 
+
+INSERT INTO Schools 
+VALUES     ('Northridge', 
+            'Layton', 
+            'Thompson'); 
+
+INSERT INTO Schools 
+VALUES     ('Davis', 
+            'Kaysville', 
+            'Bishop'); 
+--Populate Teams Table 
+INSERT INTO Teams 
+VALUES     ('1', 
+            'Weber', 
+            'Warriors', 
+            3, 
+            6); 
+
+INSERT INTO Teams 
+VALUES     ('2', 
+            'Northridge', 
+            'Knights', 
+            9, 
+            3); 
+
+INSERT INTO Teams 
+VALUES     ('3', 
+            'Davis', 
+            'Darts', 
+            8, 
+            2); 
+--Populate Player Table 
+INSERT INTO Players 
+VALUES     (42, 
+            'Locke', 
+            '1'); 
+
+INSERT INTO Players 
+VALUES     (18, 
+            'Reyes', 
+            '1'); 
+
+INSERT INTO Players 
+VALUES     (16, 
+            'Austin', 
+            '2'); 
+
+INSERT INTO Players 
+VALUES     (42, 
+            'Shepherd', 
+            '3'); 
+
+--Populate Games Table 
+INSERT INTO Games 
+VALUES     ('1', 
+            To_date('20-AUG-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            3, 
+            7, 
+            'L'); 
+
+INSERT INTO Games 
+VALUES     ('2', 
+            To_date('20-AUG-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            21, 
+            14, 
+            'W'); 
+
+INSERT INTO Games 
+VALUES     ('1', 
+            To_date('27-AUG-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            0, 
+            31, 
+            'L'); 
+
+INSERT INTO Games 
+VALUES     ('3', 
+            To_date('03-SEP-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            27, 
+            20, 
+            'W'); 
+
+INSERT INTO Games 
+VALUES     ('2', 
+            To_date('03-SEP-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            13, 
+            54, 
+            'L'); 
+
+INSERT INTO Games 
+VALUES     ('3', 
+            To_date('17-SEP-2011 00:00:00', 'DD-MON-YYYY HH24:MI:SS'), 
+            6, 
+            14, 
+            'L'); 
+
+--3 
+SELECT 'Table Schools has ' 
+       || Count(*) 
+       || ' rows.' AS " " 
+FROM   Schools; 
+
+SELECT 'Table Teams has ' 
+       || Count(*) 
+       || ' rows.' AS " " 
+FROM   Teams; 
+
+SELECT 'Table Players has ' 
+       || Count(*) 
+       || ' rows.' AS " " 
+FROM   Players; 
+
+SELECT 'Table Games has ' 
+       || Count(*) 
+       || ' rows.' AS " " 
+FROM   Games; 
+
+--4 
+SELECT 'Weber Game 1: ' 
+       || home_score 
+       || '-' 
+       || away_score 
+       || '(L)' AS "Game 1 Score" 
+FROM   Games 
+WHERE  team_id = (SELECT team_id 
+                  FROM   Teams 
+                  WHERE  school = 'Weber') 
+       AND rownum = 1 
+ORDER  BY game_date DESC; 
+
+--5 
+SELECT S.school, 
+       P.uniform_number, 
+       P.player_name, 
+       G.game_date, 
+       ( CASE 
+           WHEN G.home_score > G.away_score THEN G.home_score 
+                                                 || '-' 
+                                                 || G.away_score 
+                                                 || '(W)' 
+           ELSE G.home_score 
+                || '-' 
+                || G.away_score 
+                || '(L)' 
+         END ) AS "GAME_SCORE" 
+FROM   Schools S 
+       JOIN Teams T 
+         ON S.school = T.school 
+       JOIN Players P 
+         ON T.team_id = P.team_id 
+       JOIN Games G 
+         ON P.team_id = G.team_id 
+ORDER  BY P.player_name; 
+
+--6 
+SELECT S.school, 
+       Count(*) AS "Total Players In Games" 
+FROM   Schools S 
+       JOIN Teams T 
+         ON S.school = T.school 
+       JOIN Players P 
+         ON T.team_id = P.team_id 
+GROUP  BY S.school; 
+
+--7 
+SELECT S.coach, 
+       T.wins, 
+       T.losses 
+FROM   Schools S 
+       JOIN Teams T 
+         ON S.school = T.school; 

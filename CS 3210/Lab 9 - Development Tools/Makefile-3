@@ -1,0 +1,15 @@
+#Andrew Lane
+#CS3210: Lab 9
+#10/19/16
+
+CFLAGS = -Wall -ggdb
+CC = gcc
+
+all : addr
+
+addr: addr.o screen.o db.o
+
+addr.o : addr.c addr.h
+
+clean :
+	-rm -f *o addr

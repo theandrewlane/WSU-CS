@@ -1,0 +1,66 @@
+Andrew Lane
+CS2550
+SQL Assignment #1
+9/20/15
+
+
+1.
+select first_name, last_name 
+from instructor
+order by last_name asc;
+
+2.
+select distinct location
+from section	
+order by location asc;
+
+3.
+select first_name,last_name
+from instructor
+where last_name like 'W%'
+order by first_name asc;
+
+4.
+select phone,first_name ||' '|| last_name, employer AS last_name
+from student
+where last_name='Miller'
+order by phone asc;
+
+5.
+select course_no,description 
+from course
+where prerequisite IN (20);
+
+6.
+select course_no,description,cost
+from course
+where course_no between 200 and 299 
+and cost<1100;
+
+7.
+select course_no,section_id
+from section
+where course_no between 100 and 199  
+and (location='L211' or location='L214');
+
+8.
+select course_no, section_id
+from section
+where capacity in (10,12)
+order by course_no, section_id;
+
+9.
+select student_id, min (numeric_grade)
+from grade
+where section_id=147
+group by student_id
+order by student_id;	
+
+10.
+select course_no, description
+from course
+where course_no between 200 and 299
+and prerequisite is not null
+order by description asc;
+
+

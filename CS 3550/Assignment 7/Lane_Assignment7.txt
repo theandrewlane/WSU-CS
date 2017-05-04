@@ -1,0 +1,276 @@
+/*
+* TRAMS Assignment 7
+* Andrew Lane 3/1/2016
+* CS3550
+*/
+
+--If error "Cannot drop database “DataBaseName” because it is currently in use." is thrown, uncomment lines 8-13.
+/*
+ALTER DATABASE Lane_TRAMS
+SET SINGLE_USER --or RESTRICTED_USER
+WITH ROLLBACK IMMEDIATE;
+GO
+*/
+
+USE Lane_TRAMS;
+
+--Destory Procedures and Functions if preexisting #RIP
+GO
+IF OBJECT_ID('sp_InsertReservation', 'P') IS NOT NULL
+    DROP PROCEDURE sp_InsertReservation;
+
+
+GO
+IF OBJECT_ID(N'GetLodgingTaxRate', N'FN') IS NOT NULL
+    DROP FUNCTION dbo.GetLodgingTaxRate;
+
+
+GO
+IF OBJECT_ID(N'CalculateDeposit', N'FN') IS NOT NULL
+    DROP FUNCTION dbo.CalculateDeposit;
+
+
+GO
+IF EXISTS (SELECT name
+           FROM   sys.objects
+           WHERE  name = N'CalculateCancellationFees')
+    DROP FUNCTION CalculateCancellationFees;
+
+
+GO
+IF EXISTS (SELECT name
+           FROM   sys.objects
+           WHERE  name = N'fn_QuotedRate')
+    DROP FUNCTION fn_QuotedRate;
+
+
+GO
+--1
+PRINT ('Beginning #1 - Declaring dbo.GetLodgingTaxRate(@PropertyID, @LodgingDate) function which returns the rate');
+GO
+CREATE FUNCTION dbo.GetLodgingTaxRate
+(@PropertyID SMALLINT, @LDate DATE)
+RETURNS DECIMAL
+AS
+BEGIN
+    DECLARE @result AS DECIMAL;
+    SET @result = 0;
+    SET @result = (SELECT t.TaxRate
+                   FROM   TAXRATE AS t
+                          INNER JOIN
+                          TAXLOCATION AS tl
+                          ON tl.TaxLocationID = t.TaxLocationID
+                          INNER JOIN
+                          PROPERTY AS p
+                          ON p.TaxLocationID = tl.TaxLocationID
+                   WHERE  p.PropertyID = @PropertyID
+                          AND t.TaxType = 'L'
+                          AND (t.TaxStartDate IS NULL
+                               OR t.TaxStartDate <= @LDate)
+                          AND (t.TaxEndDate IS NULL
+                               OR t.TaxEndDate <= @LDate));
+    IF @result IS NULL
+        BEGIN
+            SET @result = 0;
+        END
+    RETURN @result;
+END
+GO
+
+PRINT ('Beginning #2 - Declaring dbo.GetLodgingTaxRate(@UnitRateID, @CheckInDate) function which returns the calcualted rate');
+GO
+CREATE FUNCTION dbo.CalculateDeposit
+(@UnitRateID SMALLINT, @CheckInDate DATE)
+RETURNS SMALLMONEY
+AS
+BEGIN
+    DECLARE @result AS SMALLMONEY;
+    DECLARE @PID AS SMALLINT;
+    DECLARE @Urate AS SMALLMONEY;
+    SET @result = 0;
+    SET @PID = (SELECT p.PropertyID
+                FROM   PROPERTY AS p
+                       INNER JOIN
+                       UNITRATE AS ur
+                       ON ur.PropertyID = p.PropertyID
+                WHERE  ur.UnitRateID = @UnitRateID);
+    SET @urate = (SELECT UnitRate
+                  FROM   UNITRATE
+                  WHERE  UnitRateID = @UnitRateID);
+    SET @result = @Urate + ((@Urate * (dbo.GetLodgingTaxRate(@PID, @CheckInDate) / 100)));
+    RETURN @result;
+END
+GO
+--Why would I rewrite this when I've already done it :)
+--Creating it again just in case it was dropped
+CREATE PROCEDURE sp_InsertReservation
+@ResDate SMALLDATETIME, @ResStatus CHAR (1), @ResCheckInDate DATE, @ResNights TINYINT, @ResQuotedRate SMALLMONEY, @ResDepositPaid SMALLMONEY, @ResCCAuth VARCHAR (25), @UnitRateID SMALLINT, @PersonID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT  INTO RESERVATION (ResDate, ResStatus, ResCheckInDate, ResNights, ResQuotedRate, ResDepositPaid, ResCCAuth, UnitRateID, PersonID)
+    VALUES                  (@ResDate, @ResStatus, @ResCheckInDate, @ResNights, @ResQuotedRate, @ResDepositPaid, @ResCCAuth, @UnitRateID, @PersonID);
+END
+GO
+
+--3
+PRINT ('Beginning #3 - Declaring variables to store the result of dbo.CalculateDeposit and getDate()');
+GO
+DECLARE @RateAndDeposit AS SMALLMONEY;
+
+DECLARE @CurrentDate AS DATE;
+
+SET @CurrentDate = getDate();
+
+SET @RateAndDeposit = (dbo.CalculateDeposit(13, '15 Aug 2015'));
+
+PRINT ('Beginning #3a - Adding a new reservation for PersonId = 6');
+
+EXECUTE sp_InsertReservation @CurrentDate, 'A', '15 Aug 2015', 3, @RateAndDeposit, @RateAndDeposit, '3A Results', 13, 6;
+
+SET @RateAndDeposit = (dbo.CalculateDeposit(13, '15 Aug 2015'));
+
+PRINT ('Beginning #3a - Adding a new reservation for PersonId = 8');
+
+EXECUTE sp_InsertReservation @CurrentDate, 'A', '27 Aug 2015', 3, @RateAndDeposit, @RateAndDeposit, '3B Results', 21, 8;
+
+SET @RateAndDeposit = (dbo.CalculateDeposit(13, '15 Aug 2015'));
+
+PRINT ('Beginning #3a - Adding a new reservation for PersonId = 9');
+
+EXECUTE sp_InsertReservation @CurrentDate, 'A', '25 Sep 2015', 3, @RateAndDeposit, @RateAndDeposit, '3C Results', 29, 9;
+
+PRINT ('Finishing #3 - Displaying ALL reservations...');
+
+SELECT *
+FROM   RESERVATION;
+GO
+
+--4
+PRINT ('Beginning #4 - Declaring dbo.CalculateCancellationFees(@ReservationID, @CancellationDate) function which returns @CancellationDetails table');
+GO
+CREATE FUNCTION dbo.CalculateCancellationFees
+(@ResID INT, @CDate DATE)
+RETURNS 
+    @CancellationDetails TABLE (
+        [ReservationID]       INT        NOT NULL,
+        [OriginalCheckInDate] DATE       NULL,
+        [DepositPaid]         SMALLMONEY NULL,
+        [CancellationCharge]  SMALLMONEY NULL)
+AS
+BEGIN
+    DECLARE @OrigCDate AS DATE;
+    DECLARE @CancelCharge AS SMALLMONEY;
+    DECLARE @DepPaid AS SMALLMONEY;
+    SET @OrigCDate = (SELECT DISTINCT TOP 1 ResCheckInDate
+                      FROM   RESERVATION
+                      WHERE  @ResId = ReservationID);
+    SET @DepPaid = (SELECT DISTINCT TOP 1 ResDepositPaid
+                    FROM   RESERVATION
+                    WHERE  @ResId = ReservationID);
+    --7 days of less cancellation notice – No refund
+    IF (@OrigCDate <= DATEADD(DAY, 7, @CDate))
+        BEGIN
+            SET @CancelCharge = @DepPaid;
+        END
+    --8-13 days’ cancellation notice (50% refund, less a $25 administration fee)
+    IF ((@OrigCDate >= DATEADD(DAY, 8, @CDate))
+        AND (@OrigCDate <= DATEADD(DAY, 13, @CDate)))
+        BEGIN
+            SET @CancelCharge = ((@DepPaid * .5) + 25.00);
+        END
+    --14-30 days’ cancellation notice (75% refund, less a $25 administration fee)
+    IF ((@OrigCDate >= DATEADD(DAY, 14, @CDate))
+        AND (@OrigCDate <= DATEADD(DAY, 30, @CDate)))
+        BEGIN
+            SET @CancelCharge = ((@DepPaid * .75) + 25.00);
+        END
+    --30+ days’ notice are entitled to a 100% refund of the deposit paid (less a $25 administration fee).
+    IF (@OrigCDate >= DATEADD(DAY, 30, @CDate))
+        BEGIN
+            SET @CancelCharge = 25.00;
+        END
+    INSERT  INTO @CancellationDetails
+    VALUES (@ResID, @OrigCDate, @DepPaid, @CancelCharge);
+    RETURN;
+END
+
+
+GO
+PRINT ('Beginning 4B - Passing in 3a 3b and 3c to CalculateCancellationFees() and returning 3 sets of results');
+
+SELECT *
+FROM   dbo.CalculateCancellationFees ((SELECT TOP 1 ReservationID
+                                       FROM   RESERVATION
+                                       WHERE  ResCCAuth = '3A Results'), '14 AUG 2015');
+
+SELECT *
+FROM   dbo.CalculateCancellationFees ((SELECT TOP 1 ReservationID
+                                       FROM   RESERVATION
+                                       WHERE  ResCCAuth = '3B Results'), '14 AUG 2015');
+
+SELECT *
+FROM   dbo.CalculateCancellationFees ((SELECT TOP 1 ReservationID
+                                       FROM   RESERVATION
+                                       WHERE  ResCCAuth = '3C Results'), '14 AUG 2015');
+
+
+GO
+PRINT ('Beginning #5 - Declaring fn_QuotedRate(@BeginDate, @EndDate, @PropertyID, @UnityTypeID) function which returns @ValidRates table');
+GO
+
+--5
+CREATE FUNCTION fn_QuotedRate
+(@BeginDate DATE, @EndDate DATE, @PropertyID INT, @UnitTypeID INT)
+RETURNS 
+    @ValidRates TABLE (
+        MaxUnitRate         SMALLMONEY    NULL,
+        UnitTypeDescription VARCHAR (100) NULL,
+        UnitRateDescription VARCHAR (100) NULL)
+AS
+BEGIN
+    DECLARE @UTDesc AS VARCHAR (100);
+    DECLARE @URDesc AS VARCHAR (100);
+    DECLARE @MaxUr AS SMALLMONEY;
+    IF @BeginDate >= @EndDate
+        BEGIN
+            SET @URDesc = ('ERROR: EndDate should chronologically proceed BeginDate!');
+        END
+    IF @BeginDate < @EndDate
+        BEGIN
+            SET @URDesc = (SELECT DISTINCT TOP 1 UnitRateDescription
+                           FROM   UNITRATE
+                           WHERE  @PropertyID = PropertyID
+                                  AND @UnitTypeID = UnitTypeID);
+
+			  SET @UTDesc = (SELECT DISTINCT TOP 1 UnitTypeDescription
+                   FROM   UNITTYPE
+                   WHERE  @UnitTypeID = UnitTypeID);
+        
+			SET @MaxUr = (SELECT MAX(UnitRate)
+						  FROM   UNITRATE
+						  WHERE  UnitTypeID = @UnitTypeID
+								 AND ((@BeginDate <= UnitRateEndDate)
+									  AND @EndDate >= UnitRateBeginDate));
+		END
+    INSERT  INTO @ValidRates
+    VALUES (@MaxUr, @UTDesc, @URDesc);
+    RETURN;
+END
+
+
+GO
+PRINT ('Beginning 5a - Passing in Property ID 10000, Begin Date 1 July 2015,  End Date 30 November 2015, and UnitTypeID 4 to fn_QuotedRate function.');
+
+SELECT *
+FROM   fn_QuotedRate ('1 July 2015', '30 November 2015', 10000, 4);
+
+PRINT ('Beginning 5b - Passing in PropertyID 11000, Begin Date 1 July 2015,  End Date 30 November 2015, and UnitTypeID 4 to fn_QuotedRate function.');
+
+SELECT *
+FROM   fn_QuotedRate ('1 July 2015', '30 November 2015', 11000, 4);
+
+PRINT ('Beginning 5c - Passing in Property ID 11000, Begin Date 30 November 2015,  End Date 1 July 2015*, and UnitTypeID 4 to fn_QuotedRate function..');
+
+SELECT *
+FROM   fn_QuotedRate ('30 November 2015', '1 July 2015', 11000, 4);

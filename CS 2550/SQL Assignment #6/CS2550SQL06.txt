@@ -1,0 +1,199 @@
+/*
+ * Andrew Lane
+ * CS2550
+ * SQL Assignment #6
+ * 10/22/15
+*/
+
+--1 
+SELECT z.student_id 
+FROM   section s, 
+       enrollment z 
+WHERE  s.section_id = z.section_id 
+       AND s.course_no BETWEEN 100 AND 199 
+GROUP  BY z.student_id 
+HAVING Count(*) = (SELECT Max(sum_enrolled) 
+                   FROM   (SELECT z.student_id, 
+                                  Count(*) AS SUM_ENROLLED 
+                           FROM   section s, 
+                                  enrollment z 
+                           WHERE  s.section_id = z.section_id 
+                                  AND s.course_no BETWEEN 100 AND 199 
+                           GROUP  BY z.student_id 
+                           ORDER  BY Count(*))); 
+
+--2 
+SELECT student_id, 
+       last_name, 
+       first_name 
+FROM   (SELECT s.student_id, 
+               w.last_name, 
+               w.first_name, 
+               s.numeric_grade, 
+               Max(s.numeric_grade) 
+                 OVER () AS numeric_final_grade 
+        FROM   grade s 
+               JOIN section z 
+                 ON s.section_id = z.section_id 
+               JOIN student w 
+                 ON s.student_id = w.student_id 
+        WHERE  z.course_no = 230 
+               AND z.section_id = 100 
+               AND s.grade_type_code = 'FI') 
+WHERE  numeric_grade = numeric_final_grade; 
+
+--3 
+SELECT a.salutation, 
+       a.first_name, 
+       a.last_name, 
+       a.zip 
+FROM   instructor a 
+WHERE  a.instructor_id NOT IN (SELECT w.instructor_id 
+                               FROM   section w) 
+ORDER  BY a.salutation, 
+          a.first_name, 
+          a.last_name, 
+          a.zip; 
+
+--4 
+SELECT s.last_name, 
+       Avg(g.numeric_grade) AS NUMERIC_GRADE 
+FROM   grade g 
+       JOIN student s 
+         ON g.student_id = s.student_id 
+WHERE  g.section_id = 90 
+       AND g.grade_type_code = 'FI' 
+GROUP  BY s.last_name 
+HAVING Avg(g.numeric_grade) > (SELECT Avg(numeric_grade) 
+                               FROM   (SELECT Avg(g.numeric_grade) AS 
+                                              NUMERIC_GRADE 
+                                       FROM   grade g 
+                                              JOIN student s 
+                                                ON s.student_id = g.student_id 
+                                       WHERE  g.section_id = 90 
+                                              AND g.grade_type_code = 'FI' 
+                                       GROUP  BY s.last_name)) 
+ORDER  BY s.last_name; 
+
+--5 
+SELECT w.course_no, 
+       w.description 
+FROM   course w, 
+       section s, 
+       enrollment z 
+WHERE  w.course_no = s.course_no 
+       AND s.section_id = z.section_id 
+GROUP  BY w.course_no, 
+          w.description 
+HAVING Count(*) = (SELECT Max(enrolled) 
+                   FROM   (SELECT w.course_no, 
+                                  w.description, 
+                                  Count(z.enroll_date) AS ENROLLED 
+                           FROM   course w, 
+                                  section s, 
+                                  enrollment z 
+                           WHERE  w.course_no = s.course_no 
+                                  AND s.section_id = z.section_id 
+                           GROUP  BY w.course_no, 
+                                     w.description)); 
+
+--6 
+SELECT s.course_no, 
+       w.description 
+FROM   course w, 
+       section s 
+WHERE  w.course_no = s.course_no 
+       AND To_char(s.start_date_time, 'HH24:MI:SS') = '10:30:00' 
+       AND EXISTS(SELECT s.course_no 
+                  FROM   section s 
+                  WHERE  To_char(s.start_date_time, 'HH24:MI:SS') = '10:30:00') 
+ORDER  BY s.course_no; 
+
+--7 
+SELECT s.student_id, 
+       s.last_name 
+FROM   student s 
+       JOIN grade g 
+         ON g.student_id = s.student_id 
+WHERE  g.section_id = 135 
+       AND g.grade_type_code = 'QZ' 
+       AND g.grade_code_occurrence = 3 
+GROUP  BY s.student_id, 
+          s.last_name 
+HAVING Avg(g.numeric_grade) < (SELECT Avg(numeric_grade) 
+                               FROM   (SELECT Avg(g.numeric_grade) AS 
+                                              NUMERIC_GRADE 
+                                       FROM   student s 
+                                              JOIN grade g 
+                                                ON g.student_id = s.student_id 
+                                       WHERE  g.section_id = 135 
+                                              AND g.grade_type_code = 'QZ' 
+                                              AND g.grade_code_occurrence = 3 
+                                       GROUP  BY s.last_name)) 
+ORDER  BY s.last_name; 
+
+--8 
+SELECT first_name, 
+       last_name, 
+       phone 
+FROM   student d, 
+       enrollment f, 
+       section g, 
+       course h 
+WHERE  d.student_id = f.student_id 
+       AND f.section_id = g.section_id 
+       AND g.course_no = h.course_no 
+       AND h.description = 'Systems Analysis' 
+INTERSECT 
+SELECT first_name, 
+       last_name, 
+       phone 
+FROM   student d, 
+       enrollment f, 
+       section g, 
+       course h 
+WHERE  d.student_id = f.student_id 
+       AND f.section_id = g.section_id 
+       AND g.course_no = h.course_no 
+       AND h.description = 'Project Management' 
+ORDER  BY last_name; 
+
+--9 
+WITH q 
+     AS (SELECT z.first_name, 
+                z.last_name, 
+                b.course_no, 
+                Max(b.description)                          AS DESCRIPTION, 
+                Count(*) 
+                  OVER ( 
+                    partition BY z.first_name, z.last_name) TheCount 
+         FROM   instructor z 
+                JOIN section w 
+                  ON z.instructor_id = w.instructor_id 
+                JOIN course b 
+                  ON w.course_no = b.course_no 
+         WHERE  Upper(description) LIKE '%JAVA%' 
+         GROUP  BY z.first_name, 
+                   z.last_name, 
+                   b.course_no) 
+SELECT first_name, 
+       last_name, 
+       course_no, 
+       description 
+FROM   q 
+WHERE  thecount = (SELECT Max(thecount) 
+                   FROM   q) 
+ORDER  BY first_name, 
+          last_name, 
+          description; 
+
+--10 
+SELECT s.student_id, 
+       s.last_name, 
+       Round(AVG(g.numeric_grade), 2) AS FINAL_GRADE 
+FROM   student s, 
+       grade g, 
+       grade_type_weight gt 
+WHERE  s.student_id = g.student_id 
+       AND g.section_id = 143 
+GROUP  BY s.student_id, s.last_name;

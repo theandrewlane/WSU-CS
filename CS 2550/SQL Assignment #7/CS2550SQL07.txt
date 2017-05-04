@@ -1,0 +1,106 @@
+/*
+ * Andrew Lane
+ * CS2550
+ * SQL Assignment #7
+ * 10/31/15
+*/
+
+--1 
+SELECT a.last_name, 
+       a.first_name 
+FROM   instructor a 
+WHERE  a.instructor_id NOT IN (SELECT w.instructor_id 
+                               FROM   section w 
+                                      JOIN grade_type_weight e 
+                                        ON e.section_id = w.section_id 
+                                      JOIN grade_type s 
+                                        ON e.grade_type_code = s.grade_type_code 
+                               WHERE  s.description = 'Project') 
+ORDER  BY a.last_name, 
+          a.first_name; 
+
+--2 
+SELECT Sum(Count(s.student_id)) AS BELOW_AVERAGE 
+FROM   student s 
+       JOIN grade g 
+         ON g.student_id = s.student_id 
+WHERE  g.section_id = 86 
+       AND g.grade_type_code = 'FI' 
+GROUP  BY s.student_id, 
+          s.last_name 
+HAVING Avg(g.numeric_grade) < (SELECT Avg(numeric_grade) 
+                               FROM   (SELECT Avg(g.numeric_grade) AS 
+                                              NUMERIC_GRADE 
+                                       FROM   student s 
+                                              JOIN grade g 
+                                                ON g.student_id = s.student_id 
+                                       WHERE  g.section_id = 86 
+                                              AND g.grade_type_code = 'FI' 
+                                       GROUP  BY s.last_name)) 
+ORDER  BY s.last_name; 
+
+--3 
+SELECT w.city, 
+       w.state 
+FROM   zipcode w, 
+       student s, 
+       enrollment z 
+WHERE  w.zip = s.zip 
+       AND s.student_id = z.student_id 
+GROUP  BY w.city, 
+          w.state 
+HAVING Count(*) = (SELECT Max(enrolled) 
+                   FROM   (SELECT w.city, 
+                                  w.state, 
+                                  Count(z.enroll_date) AS ENROLLED 
+                           FROM   zipcode w, 
+                                  student s, 
+                                  enrollment z 
+                           WHERE  w.zip = s.zip 
+                                  AND s.student_id = z.student_id 
+                           GROUP  BY w.city, 
+                                     w.state)); 
+
+--4 
+SELECT student_id, 
+       first_name, 
+       last_name, 
+       numeric_grade 
+FROM   (SELECT s.student_id, 
+               w.last_name, 
+               w.first_name, 
+               s.numeric_grade, 
+               Min(s.numeric_grade) 
+                 OVER () AS numeric_final_grade 
+        FROM   grade s 
+               JOIN section z 
+                 ON s.section_id = z.section_id 
+               JOIN student w 
+                 ON s.student_id = w.student_id 
+        WHERE  z.section_id = 81 
+               AND s.grade_type_code = 'FI') 
+WHERE  numeric_grade = numeric_final_grade; 
+
+--5 
+WITH q 
+     AS (SELECT s.student_id, 
+                s.last_name, 
+                s.first_name, 
+                Count(DISTINCT z.course_no) AS courses, 
+                Count(z.course_no)          AS courses_taken 
+         FROM   enrollment w, 
+                section z, 
+                student s 
+         WHERE  w.section_id = z.section_id 
+                AND w.student_id = s.student_id 
+         GROUP  BY s.student_id, 
+                   s.last_name, 
+                   s.first_name 
+         HAVING Count(course_no) > 1 
+         ORDER  BY s.student_id) 
+SELECT student_id, 
+       last_name, 
+       first_name 
+FROM   q 
+WHERE  courses < courses_taken 
+ORDER  BY student_id; 

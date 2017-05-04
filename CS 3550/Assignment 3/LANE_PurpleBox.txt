@@ -1,0 +1,254 @@
+-- Purple Box Creation Script
+-- Andrew Lane 1/26/2016
+-- CS3550
+
+ 
+USE Master
+ --If the DB already exists, drop it before running the rest of this script
+IF  EXISTS ( SELECT * FROM sysdatabases WHERE name = 'Lane_PurpleBox')
+DROP Database Lane_PurpleBox
+GO
+
+CREATE DATABASE Lane_PurpleBox
+
+ON Primary
+(NAME = 'Lane_PurplBox', -- Virtual Object Name --
+ FILENAME = 'C:\Stage\Lane_PeurpleBox.mdf',
+ SIZE = 10MB,
+ MAXSIZE = 50MB, 
+ FILEGROWTH = 10% --5MB incriments --
+)
+
+--Enable logging and specify params--
+LOG ON 
+
+(NAME = 'Lane_PurpleBox_LOG', -- Virtual Object Name--
+  FILENAME = 'C:\Stage\Lane_PeurpleBox.ldf',
+ SIZE = 2MB,
+ MAXSIZE = 5MB, 
+ FILEGROWTH = 500KB
+)
+
+GO
+
+--Switch to the newly built DB
+USE Lane_PurpleBox 
+
+--Table Creation
+CREATE TABLE PB_USER --no fks
+( UserID int	NOT NULL IDENTITY(1,1), --pk
+  UserPassword char(20) NOT NULL,
+  VerificationQuestion char(50)  NOT NULL,
+  VerificationAnswer char(50)	NOT NULL,
+  Administrator	bit	NOT NULL,
+  BannedStatus bit NOT NULL,
+  Premium	bit	NOT NULL
+)
+
+CREATE TABLE PHONE_NUMBER
+( PhoneNumberID int	NOT NULL IDENTITY(1,1), --pk
+  UserID int NOT NULL, --fk
+  PhoneType varchar(20),
+  PhoneNumber varchar(20)  NOT NULL
+)
+
+CREATE TABLE MOVIE_RENTAL
+( RentalNum bigint	NOT NULL IDENTITY(1,1), --pk
+  RentalDate smalldatetime NOT NULL,
+  ReturnDate smalldatetime  NOT NULL,
+  UserID int NOT NULL, --fk
+  MovieItemID	bigInt	NOT NULL
+)
+
+CREATE TABLE MOVIE_REQUEST
+( RequestID bigint	NOT NULL IDENTITY(1,1), --pk
+  MovieID int NOT NULL, --fk2
+  UserID int NOT NULL, --fk1
+  FormatID	tinyInt	NOT NULL
+)
+
+CREATE TABLE MOVIE_ITEM
+( MovieItemID bigint	NOT NULL IDENTITY(1,1), --pk
+  MovieID int NOT NULL, --fk1
+  FormatID	tinyInt	NOT NULL --fk2
+)
+
+CREATE TABLE MOVIE_FORMAT
+( FormatID tinyInt	NOT NULL IDENTITY(1,1), --pk
+  FormatType	char(10)	NOT NULL
+)
+
+CREATE TABLE MOVIE
+( MovieID int	NOT NULL IDENTITY(1,1), --pk
+  MovieTitle char(100) NOT NULL,
+  MovieDescirption 	varchar(300) NOT NULL
+)
+
+CREATE TABLE MOVIE_DIRECTOR
+( DirectorID int NOT NULL, --pk2/fk2
+  MovieID int	NOT NULL, --fk
+  MovieDescription 	varchar(300) NOT NULL --fk2
+)
+
+CREATE TABLE DIRECTOR
+(   DirectorID int NOT NULL IDENTITY(1,1), --pk/fk
+    DirectorFirstName char(20) NOT NULL,
+	DirectorLastName char(20) NOT NULL, 
+)
+
+CREATE TABLE MOVIE_ACTOR
+( MovieActorID int	NOT NULL IDENTITY(1,1), --pk/fk
+  ActorID int NOT NULL, --fk1
+  MovieID 	int NOT NULL, --fk2
+  CharacterPlayed varchar(50) NOT NULL
+)
+
+CREATE TABLE ACTOR
+(   ActorID int NOT NULL IDENTITY(1,1), --pk/fk
+    ActorFirstName char(20) NOT NULL,
+	ActorLastName char(20) NOT NULL, 
+)
+
+CREATE TABLE MOVIE_GENRE
+( MovieID int	NOT NULL IDENTITY(1,1), --pk/fk
+  GenreType char(20) NOT NULL  --pk2/fk2
+)
+
+CREATE TABLE GENRE
+( GenreType char(20)	NOT NULL, --pk
+  GenreDescription char(30) NOT NULL 
+)
+
+--Alter all of the above tables and add PKs
+ALTER TABLE PB_USER
+	ADD CONSTRAINT PK_UserID
+	PRIMARY KEY (UserID)
+
+ALTER TABLE PHONE_NUMBER
+	ADD CONSTRAINT PK_PhoneNumberID
+	PRIMARY KEY (PhoneNumberID)
+
+ALTER TABLE MOVIE_RENTAL
+	ADD CONSTRAINT PK_RentalNum
+	PRIMARY KEY (RentalNum)
+
+ALTER TABLE MOVIE_ITEM
+	ADD CONSTRAINT PK_MovieItemID
+	PRIMARY KEY (MovieItemID)
+
+ALTER TABLE MOVIE_FORMAT
+	ADD CONSTRAINT PK_FormatID
+	PRIMARY KEY (FormatID)
+
+ALTER TABLE MOVIE
+	ADD CONSTRAINT PK_MovieID
+	PRIMARY KEY (MovieID)
+
+ALTER TABLE DIRECTOR
+	ADD CONSTRAINT PK_DirectorID
+	PRIMARY KEY (DirectorID)
+
+ALTER TABLE MOVIE_ACTOR
+	ADD CONSTRAINT PK_MovieActorID
+	PRIMARY KEY (MovieActorID)
+
+ALTER TABLE ACTOR
+	ADD CONSTRAINT PK_ActorID
+	PRIMARY KEY (ActorID)
+
+ALTER TABLE GENRE
+	ADD CONSTRAINT PK_GenreType
+	PRIMARY KEY (GenreType)
+	
+--Alter table to add FKs
+--Do the M:M breakups First
+ALTER TABLE MOVIE_GENRE
+	ADD CONSTRAINT FK_MovieHasGenre
+	FOREIGN KEY (MovieID) REFERENCES MOVIE (MovieID)
+
+ALTER TABLE MOVIE_GENRE
+	ADD CONSTRAINT FK_MovieGenreHasAGenreType
+	FOREIGN KEY (GenreType) REFERENCES GENRE (GenreType)
+
+ALTER TABLE MOVIE_DIRECTOR
+	ADD CONSTRAINT FK_MovieDirectorHasAMovie
+	FOREIGN KEY (MovieID) REFERENCES MOVIE (MovieID)
+
+ALTER TABLE MOVIE_DIRECTOR
+	ADD CONSTRAINT FK_MovieDirectorHasDirectorID
+	FOREIGN KEY (DirectorID) REFERENCES DIRECTOR (DirectorID)
+
+--Add Reminaing FKs
+ALTER TABLE PHONE_NUMBER
+	ADD CONSTRAINT FK_PhoneMustHaveUser
+	FOREIGN KEY (UserID) REFERENCES PB_USER (UserID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_RENTAL
+	ADD CONSTRAINT FK_RentalMustHaveUser
+	FOREIGN KEY (UserID) REFERENCES PB_USER (UserID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_RENTAL
+	ADD CONSTRAINT FK_RentalMustHaveMovieItem
+	FOREIGN KEY (MovieItemID) REFERENCES MOVIE_ITEM (MovieItemID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_ITEM
+	ADD CONSTRAINT FK_RentalMustHaveAFormat
+	FOREIGN KEY (FormatID) REFERENCES MOVIE_FORMAT (FormatID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_ITEM
+    ADD CONSTRAINT FK_RentalMustHaveMovieID
+	FOREIGN KEY (MovieID) REFERENCES MOVIE (MovieID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_DIRECTOR
+	ADD CONSTRAINT FK_MovieMustHaveDirector
+	FOREIGN KEY (MovieID) REFERENCES MOVIE (MovieID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_DIRECTOR
+	ADD CONSTRAINT FK_MovieDirectorMustHaveDirector
+	FOREIGN KEY (DirectorID) REFERENCES DIRECTOR (DirectorID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_ACTOR
+	ADD CONSTRAINT FK_MovieActorMustHaveActorID
+	FOREIGN KEY (ActorID) REFERENCES ACTOR (ActorID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE MOVIE_ACTOR
+	ADD CONSTRAINT FK_MovieActorMustHaveMovieID
+	FOREIGN KEY (MovieID) REFERENCES MOVIE (MovieID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+--Check Constraints!
+
+ALTER TABLE PB_USER
+	ADD CONSTRAINT CK_PasswordLength
+	CHECK (LEN(UserPassword) > 5)
+
+ALTER TABLE PB_USER
+	ADD CONSTRAINT CK_SecurityQuestionLength
+	CHECK (LEN(VerificationAnswer) > 8)
+
+ALTER TABLE PHONE_NUMBER
+	ADD CONSTRAINT CK_PhoneNumber
+	CHECK (PhoneNumber NOT LIKE '%[^0-9]%')
+GO
+
+--Add Defaults
+ALTER TABLE PHONE_NUMBER
+	ADD CONSTRAINT DK_DefaultPhoneType
+	DEFAULT 'Cell Phone' FOR PhoneType

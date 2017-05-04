@@ -1,0 +1,5 @@
+sig: sig.c
+	gcc -ggdb -Wall -Werror -o sig sig.c
+
+clean:
+	-rm sig

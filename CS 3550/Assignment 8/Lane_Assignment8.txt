@@ -1,0 +1,535 @@
+/*
+* TRAMS Assignment 8
+* Andrew Lane 3/12/2016
+* CS3550
+*/
+USE Lane_TRAMS;
+
+
+GO
+IF OBJECT_ID(N'GetLodgingTaxRate', N'FN') IS NOT NULL
+    DROP FUNCTION dbo.GetLodgingTaxRate;
+
+IF EXISTS (SELECT *
+           FROM   INFORMATION_SCHEMA.ROUTINES
+           WHERE  SPECIFIC_NAME = 'sp_InsertReservation')
+    DROP PROCEDURE sp_InsertReservation;
+
+
+GO
+IF EXISTS (SELECT name
+           FROM   sysobjects
+           WHERE  name = 'tr_UpdateFolio')
+    DROP TRIGGER tr_UpdateFolio;
+
+
+GO
+IF EXISTS (SELECT name
+           FROM   sysobjects
+           WHERE  name = 'tr_GenerateBill')
+    DROP TRIGGER tr_GenerateBill;
+
+
+GO
+IF EXISTS (SELECT name
+           FROM   sysobjects
+           WHERE  name = 'tr_UnitIDMustExist')
+    DROP TRIGGER tr_UnitIDMustExist;
+
+
+GO
+IF EXISTS (SELECT *
+           FROM   INFORMATION_SCHEMA.ROUTINES
+           WHERE  SPECIFIC_NAME = 'sp_ProduceBill')
+    DROP PROCEDURE sp_ProduceBill;
+
+
+GO
+-- Procedure to build Folio Report using a cursor to loop through folio details
+CREATE PROCEDURE sp_ProduceBill
+@p_FolioID SMALLINT
+AS
+BEGIN
+    -- declare variables for ease of printing later
+    DECLARE @ErrMessage AS VARCHAR (MAX);
+    DECLARE @GuestName AS VARCHAR (MAX);
+    DECLARE @UnitNumber AS VARCHAR (MAX);
+    DECLARE @CheckInDate AS VARCHAR (MAX);
+    DECLARE @CheckOutDate AS VARCHAR (MAX);
+    DECLARE @TransDesc AS VARCHAR (MAX);
+    DECLARE @TransAmount AS VARCHAR (MAX);
+    DECLARE @TransDate AS VARCHAR (MAX);
+    IF NOT EXISTS (SELECT FolioID
+                   FROM   FOLIO
+                   WHERE  FolioID = @p_FolioID)
+        BEGIN
+            SET @ErrMessage = ('"' + CONVERT (VARCHAR, @p_FolioID) + '" is not a valid Folio ID');
+            RAISERROR (@ErrMessage, -1, -1, @p_FolioID);
+            RETURN;
+        END
+    SELECT @GuestName = CONCAT(PersonFirst, ', ', PersonLast),
+           @UnitNumber = UnitNumber,
+           @CheckInDate = FolioCheckInDate,
+           @CheckOutDate = FolioCheckOutDate
+    FROM   FOLIO AS F
+           INNER JOIN
+           RESERVATION AS R
+           ON R.ReservationID = F.ReservationID
+           INNER JOIN
+           PERSON AS P
+           ON P.PersonID = R.PersonID
+           INNER JOIN
+           UNIT AS U
+           ON U.UnitID = F.UnitId
+    WHERE  F.FolioID = @p_FolioID;
+    PRINT 'Guest Name:			' + @GuestName;
+    PRINT 'Unit Number:		' + @UnitNumber;
+    PRINT 'Check-In Date:		' + @CheckInDate;
+    PRINT 'Check-Out Date:		' + @CheckOutDate;
+    PRINT '';
+    PRINT 'Folio Details:';
+    PRINT '';
+    IF NOT EXISTS (SELECT FolioID
+                   FROM   FOLIOTRANSACTION
+                   WHERE  FolioID = @p_FolioID)
+        BEGIN
+            PRINT 'No details for this Folio.';
+            RETURN;
+        END
+    DECLARE FolioDetailsCursor CURSOR
+        FOR SELECT TransDescription,
+                   TransAmount,
+                   TransDate
+            FROM   FOLIOTRANSACTION
+            WHERE  FolioID = @p_FolioID;
+    OPEN FolioDetailsCursor;
+    -- Fetch first time
+    FETCH NEXT FROM FolioDetailsCursor INTO @TransDesc, @TransAmount, @TransDate;
+    WHILE @@FETCH_STATUS = 0
+        BEGIN
+            PRINT 'Transaction Description:		' + @TransDesc;
+            PRINT 'Transaction Amount:				' + @TransAmount;
+            PRINT 'Transaction Date:				' + @TransDate;
+            PRINT '';
+            -- Fetch Again
+            FETCH NEXT FROM FolioDetailsCursor INTO @TransDesc, @TransAmount, @TransDate;
+        END
+    CLOSE FolioDetailsCursor;
+    DEALLOCATE FolioDetailsCursor;
+END
+
+
+GO
+CREATE FUNCTION dbo.GetLodgingTaxRate
+(@Fid INT, @LDate DATE)
+RETURNS DECIMAL
+AS
+BEGIN
+    DECLARE @Uid AS SMALLINT;
+    SET @Uid = (SELECT TOP 1 UnitID
+                FROM   FOLIO
+                WHERE  FolioID = @FID);
+    DECLARE @PropertyID AS SMALLINT;
+    SET @PropertyID = (SELECT TOP 1 u.PropertyID
+                       FROM   UNIT AS U
+                              INNER JOIN
+                              UNITOWNER AS uo
+                              ON uo.UnitID = u.UnitID
+                              INNER JOIN
+                              PERSON AS p
+                              ON p.PersonID = uo.PersonID
+                              INNER JOIN
+                              RESERVATION AS r
+                              ON r.PersonID = p.PersonID
+                              INNER JOIN
+                              FOLIO AS f
+                              ON f.ReservationID = r.ReservationID
+                       WHERE  u.UnitID = @Uid);
+    DECLARE @result AS DECIMAL;
+    SET @result = (SELECT t.TaxRate
+                   FROM   TAXRATE AS t
+                          INNER JOIN
+                          TAXLOCATION AS tl
+                          ON tl.TaxLocationID = t.TaxLocationID
+                          INNER JOIN
+                          PROPERTY AS p
+                          ON p.TaxLocationID = tl.TaxLocationID
+                   WHERE  p.PropertyID = @PropertyID
+                          AND t.TaxType = 'L'
+                          AND (t.TaxStartDate IS NULL
+                               OR t.TaxStartDate <= @LDate)
+                          AND (t.TaxEndDate IS NULL
+                               OR t.TaxEndDate <= @LDate));
+    IF @result IS NULL
+        BEGIN
+            SET @result = 0;
+        END
+    RETURN @result;
+END
+
+
+GO
+-- Beginning 1 - Write a stored procedure named sp_InsertPerson that can be used to insert a new row of 
+-- data (guest) into the Person Table AND also insert a reservation of that new person 
+-- (using the @@identity of the new PersonID created). This will require a separate procedure named 
+-- sp_InsertReservation (that is called from within sp_InsertPerson after the new PersonID is determined). 
+-- Procedure to insert a new Reservation
+-- Child Proc called in InsertPerson
+CREATE PROCEDURE sp_InsertReservation
+@p_ResDate SMALLDATETIME, @p_ResStatus CHAR (1), @p_ResCheckInDate DATE, @p_ResNights TINYINT, @p_ResQuotedRate SMALLMONEY, @p_ResQuotedPaid SMALLMONEY, @p_ResCCAuth VARCHAR (25), @p_UnitRateID SMALLINT, @p_PersonID INT
+AS
+INSERT  INTO RESERVATION
+VALUES (@p_ResDate, @p_ResStatus, @p_ResCheckInDate, @p_ResNights, @p_ResQuotedRate, @p_ResQuotedPaid, @p_ResCCAuth, @p_UnitRateID, @p_PersonID);
+
+
+GO
+IF EXISTS (SELECT *
+           FROM   INFORMATION_SCHEMA.ROUTINES
+           WHERE  SPECIFIC_NAME = 'sp_InsertPerson')
+    DROP PROCEDURE sp_InsertPerson;
+
+
+GO
+-- Procedure to insert new Person 
+-- Calls child Proc InsertReservation
+CREATE PROCEDURE sp_InsertPerson
+@p_PersonFirst NVARCHAR (50), @p_PersonLast NVARCHAR (50), @p_PersonAddress VARCHAR (200), @p_PersonCity VARCHAR (50), @p_PersonState CHAR (2)=NULL, @p_PersonPostalCode VARCHAR (10), @p_PersonCountry VARCHAR (20), @p_PersonPhone VARCHAR (20), @p_PersonEmail VARCHAR (200), @p_ResDate SMALLDATETIME, @p_ResStatus CHAR (1), @p_ResCheckInDate DATE, @p_ResNights TINYINT, @p_ResQuotedRate SMALLMONEY, @p_ResQuotedPaid SMALLMONEY, @p_ResCCAuth VARCHAR (25), @p_UnitRateID SMALLINT
+AS
+INSERT  INTO dbo.PERSON
+VALUES (@p_PersonFirst, @p_PersonLast, @p_PersonAddress, @p_PersonCity, @p_PersonState, @p_PersonPostalCode, @p_PersonCountry, @p_PersonPhone, @p_PersonEmail);
+PRINT '';
+PRINT 'Adding a record to RESERVATION';
+EXECUTE sp_InsertReservation @p_ResDate = @p_ResDate, @p_ResStatus = @p_ResStatus, @p_ResCheckInDate = @p_ResCheckInDate, @p_ResNights = @p_ResNights, @p_ResQuotedRate = @p_ResQuotedRate, @p_ResQuotedPaid = @p_ResQuotedPaid, @p_ResCCAuth = @p_ResCCAuth, @p_UnitRateID = @p_UnitRateID, @p_PersonID = @@IDENTITY;
+
+
+GO
+PRINT 'Beginning 1A - Demonstrate this procedure by adding yourself as a new person, using sp_InsertPerson.';
+
+-- Declare a variable so that I can get the current date and pass it to the stored procedure 
+DECLARE @TodaysDate AS SMALLDATETIME = getdate();
+
+EXECUTE sp_InsertPerson @p_PersonFirst = N'Andrew', @p_PersonLast = N'Lane', @p_PersonAddress = N'6259 Anders Ridge Way', @p_PersonCity = N'West Valley City', @p_PersonState = N'UT', @p_PersonPostalCode = N'84128', @p_PersonCountry = N'United States', @p_PersonPhone = N'8017505702', @p_PersonEmail = N'AndrewLane@gmail.com', @p_ResDate = @TodaysDate, @p_ResStatus = N'A', @p_ResCheckInDate = '27 July 2015', @p_ResNights = 3, @p_ResQuotedRate = 209.95, @p_ResQuotedPaid = 209.95, @p_ResCCAuth = N'pending', @p_UnitRateID = 15;
+
+
+GO
+PRINT 'Beginning #1: Creating trigger tr_UnitIDMustExist on the FOLIO table that validates the UnitID...';
+
+
+GO
+CREATE TRIGGER tr_UnitIDMustExist
+    ON FOLIO
+    AFTER INSERT, UPDATE
+    AS DECLARE @UnitID AS SMALLINT;
+       SET @UnitID = (SELECT UnitID
+                      FROM   Inserted AS i);
+       IF NOT EXISTS (SELECT *
+                      FROM   UNIT
+                      WHERE  UnitID = @UnitID)
+           BEGIN
+               RAISERROR ('You have entered an invalid UnitID', 11, 1);
+               ROLLBACK;
+           END
+
+
+GO
+PRINT 'Beginning #1a: Demonstrating error message thrown by tr_UnitIDMustExist trigger for an invliad UnitID...';
+
+
+GO
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+INSERT  INTO FOLIO (FolioStatus, FolioRate, FolioCheckInDate, FolioCheckOutDate, UnitID, ReservationID)
+VALUES            ('C', 209.95, '27 July 2015', '30 July 2015', 999, @ResID);
+
+
+GO
+PRINT 'Beginning #1b: Demonstrating valid foilio entry using unitID 14010...';
+
+
+GO
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+INSERT  INTO FOLIO (FolioStatus, FolioRate, FolioCheckInDate, FolioCheckOutDate, UnitID, ReservationID)
+VALUES            ('C', 209.95, '27 July 2015', '30 July 2015', 14010, @ResID);
+
+
+GO
+PRINT 'Beginning #1c: Displaying results...';
+
+
+GO
+SELECT *
+FROM   FOLIO;
+
+
+GO
+PRINT 'Beginning #1d: Adding sample data to FOLIOTRANSACTION table...';
+
+
+GO
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+DECLARE @FolioID AS INT;
+
+SET @FolioID = (SELECT TOP 1 FolioID
+                FROM   FOLIO
+                WHERE  ReservationID = @ResID);
+
+INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+VALUES                       ('27 July 2015', 99.99, 'Internet', 13, @FolioID);
+
+INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+VALUES                       ('28 July 2015', 2.99, 'Facial Massage', 14, @FolioID);
+
+INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+VALUES                       ('28 July 2015', 99.99, 'PAy Per View', 12, @FolioID);
+
+
+GO
+--2
+PRINT 'Beginning #2: Creating trigger tr_UpdateFolio on the FOLIO table that is invoked when the status is modified...';
+
+
+GO
+CREATE TRIGGER tr_UpdateFolio
+    ON FOLIO
+    AFTER UPDATE, INSERT
+    AS IF UPDATE (FolioStatus)
+           BEGIN
+               DECLARE @FolioStatus AS CHAR (1);
+               DECLARE @FolioRate AS SMALLINT;
+               DECLARE @NightsStay AS SMALLINT;
+               DECLARE @CheckOutTime AS TIME;
+               DECLARE @Fid AS INT;
+               DECLARE @CheckoutDate AS DATE;
+               DECLARE @TODAY AS DATE;
+               SET @CheckOutDate = (SELECT FolioCheckOutDate
+                                    FROM   Inserted AS i);
+               SET @FolioStatus = (SELECT FolioStatus
+                                   FROM   Inserted AS i);
+               SET @NightsStay = (SELECT DATEDIFF(day, FolioCheckInDate, FolioCheckOutDate)
+                                  FROM   Inserted AS i);
+               SET @FolioRate = (SELECT (FolioRate * @NightsStay)
+                                 FROM   Inserted AS i);
+               SET @CheckOutTime = (SELECT CONVERT (VARCHAR, FolioCheckOutDate, 24)
+                                    FROM   Inserted AS i);
+               SET @Fid = (SELECT FolioID
+                           FROM   Inserted AS i);
+               SET @Today = getDate();
+               IF @FolioStatus = 'B'
+                   BEGIN
+                       IF (CAST (@CheckOutTime AS TIME) <= '16:00:00'
+                           AND CAST (@CheckOutTime AS TIME) >= '13:00:00')
+                           BEGIN
+                               SET @FolioRate = (@FolioRate * .5) + @FolioRate;
+                               INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+                               VALUES                       (@Today, @FolioRate, 'Lodging', 1, @FID);
+                           END
+                       IF (CAST (@CheckOutTime AS TIME) > '16:00:00')
+                           BEGIN
+                               SET @FolioRate = (@FolioRate / @NightsStay) + @FolioRate;
+                               INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+                               VALUES                       (@Today, @FolioRate, 'Lodging', 1, @FID);
+                           END
+                       --INSERT INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID) VALUES (@Today, @FolioRate, 'Lodging', 1, @FID)
+                       INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+                       VALUES                       (@Today, dbo.GetLodgingTaxRate(@Fid, @CheckOutDate), 'Occupancy Tax', 2, @FID);
+                   END
+           END
+       IF UPDATE (FolioCheckOutDate)
+           BEGIN
+               DECLARE @ResID AS INT;
+               SET @ResID = (SELECT TOP 1 ReservationID
+                             FROM   RESERVATION
+                             WHERE  ResCheckInDate = '27 July 2015'
+                                    AND ResStatus = 'A'
+                                    AND ResCheckInDate = '27 July 2015'
+                                    AND ResNights = 3
+                                    AND ResQuotedRate = 209.95
+                                    AND ResDepositPaid = 209.95
+                                    AND ResCCAuth = 'pending'
+                                    AND UnitRateID = 15);
+               DECLARE @FolioID AS INT;
+               SET @FolioID = (SELECT TOP 1 FolioID
+                               FROM   FOLIO
+                               WHERE  ReservationID = @ResID);
+               INSERT  INTO FOLIOTRANSACTION (TransDate, TransAmount, TransDescription, TransCategoryID, FolioID)
+               VALUES                       (@Today, 0.00, 'Payment', 10, @FolioID);
+           END
+
+
+GO
+--3
+PRINT 'Beginning #3: Creating trigger tr_GenerateBill that will be invoked when an entry is inserted into the FOLIOTRANSACTION table...';
+
+
+GO
+CREATE TRIGGER tr_GenerateBill
+    ON FOLIO
+    AFTER INSERT
+    AS IF (10 = (SELECT TOP 1 TransCategoryID
+                 FROM   TRANSCATEGORY))
+           BEGIN
+               DECLARE @FID AS INT;
+               SET @FID = (SELECT FolioID
+                           FROM   Inserted AS i);
+               EXECUTE dbo.sp_ProduceBill @p_FolioID = @FID;
+           END
+
+
+GO
+--4
+PRINT 'Beginning #4a: Updating folio status to automatically invoke tr_UnitIDMustExist triggering late charge...';
+
+
+GO
+DECLARE @TODAY AS DATE;
+
+SET @Today = getDate();
+
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+DECLARE @FolioID AS INT;
+
+SET @FolioID = (SELECT TOP 1 FolioID
+                FROM   FOLIO
+                WHERE  ReservationID = @ResID);
+
+DECLARE @Date1 AS SMALLDATETIME;
+
+SET @Date1 = '2015-07-24 14:00:00';
+
+UPDATE  FOLIO
+    SET FolioStatus       = 'B',
+        FolioCheckOutDate = @Date1
+WHERE   FolioID = @FolioID
+        AND ReservationID = @ResID;
+
+
+GO
+PRINT 'Beginning #4b: Updating folio status to automatically invoke tr_UnitIDMustExist triggering late charge...';
+
+DECLARE @TODAY AS DATE;
+
+SET @Today = getDate();
+
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+DECLARE @FolioID AS INT;
+
+SET @FolioID = (SELECT TOP 1 FolioID
+                FROM   FOLIO
+                WHERE  ReservationID = @ResID);
+
+DECLARE @Date2 AS SMALLDATETIME;
+
+SET @Date2 = '2015-07-24 10:00:00';
+
+UPDATE  FOLIO
+    SET FolioStatus       = 'B',
+        FolioCheckOutDate = @Date2
+WHERE   FolioID = @FolioID
+        AND ReservationID = @ResID;
+
+
+GO
+PRINT 'Beginning #4c: Updating folio status to automatically invoke tr_UnitIDMustExist triggering late charge...';
+
+DECLARE @TODAY AS DATE;
+
+SET @Today = getDate();
+
+DECLARE @ResID AS INT;
+
+SET @ResID = (SELECT TOP 1 ReservationID
+              FROM   RESERVATION
+              WHERE  ResCheckInDate = '27 July 2015'
+                     AND ResStatus = 'A'
+                     AND ResCheckInDate = '27 July 2015'
+                     AND ResNights = 3
+                     AND ResQuotedRate = 209.95
+                     AND ResDepositPaid = 209.95
+                     AND ResCCAuth = 'pending'
+                     AND UnitRateID = 15);
+
+DECLARE @FolioID AS INT;
+
+SET @FolioID = (SELECT TOP 1 FolioID
+                FROM   FOLIO
+                WHERE  ReservationID = @ResID);
+
+DECLARE @Date3 AS SMALLDATETIME;
+
+SET @Date3 = '2015-07-24 18:00:00';
+
+UPDATE  FOLIO
+    SET FolioStatus       = 'B',
+        FolioCheckOutDate = @Date3
+WHERE   FolioID = @FolioID
+        AND ReservationID = @ResID;
+
+
+GO
+PRINT 'Beginning #4d: Demonstrating trigger resutls from #4...';
+
+
+GO
+SELECT *
+FROM   FOLIOTRANSACTION;
+
+--5

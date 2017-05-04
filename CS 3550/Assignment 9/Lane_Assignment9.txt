@@ -1,0 +1,372 @@
+/* 
+* TRAMS THAI DB - Assignment 9 
+* Andrew Lane 3/21/2016 
+* CS3550 
+*/ 
+--1 
+PRINT 'Beginning #1: Creating Local TRAMS DB...' 
+
+CREATE DATABASE Lane_TRAMS
+
+go 
+
+--2 
+PRINT 'Beginning #2: Populating Local TRAMS DB...' 
+
+go 
+
+BULK INSERT AMENITY 
+  FROM 'C:\stage\Amenity.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT FOLIO 
+  FROM 'C:\stage\Folio.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT FOLIOTRANSACTION 
+  FROM 'C:\stage\FOLIOTRANSACTION.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT PERSON 
+  FROM 'C:\stage\PERSON.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT PROPERTY 
+  FROM 'C:\stage\PROPERTY.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT PROPERTYAMENITY 
+  FROM 'C:\stage\PROPERTYAMENITY.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT RESERVATION 
+  FROM 'C:\stage\RESERVATION.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT TAXLOCATION 
+  FROM 'C:\stage\TAXLOCATION.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT TAXRATE 
+  FROM 'C:\stage\TAXRATE.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT TRANSCATEGORY 
+  FROM 'C:\stage\TRANSCATEGORY.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT UNIT 
+  FROM 'C:\stage\UNIT.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT UNITAMENITY 
+  FROM 'C:\stage\UnitAmenity.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT UNITOWNER 
+  FROM 'C:\stage\UNITOWNER.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT UNITRATE 
+  FROM 'C:\stage\UNITRATE.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+BULK INSERT UNITTYPE 
+  FROM 'C:\stage\UNITTYPE.txt' 
+  WITH 
+    ( 
+      fieldterminator = '|' 
+    ) 
+go 
+
+--3 
+PRINT 'Beginning #3: Adding Linked Server...' 
+
+EXEC sp_addlinkedserver 
+  @server='TITAN_Lane', 
+  @srvproduct='', 
+  @provider='MSDASQL', 
+  @provstr= 
+'DRIVER={SQL Server};SERVER=titan.cs.weber.edu,10433;UID=Thai_user;PWD=Thai_test;Initial Catalog=Lane_TRAMS'
+
+go 
+
+EXEC sp_serveroption 
+  'TITAN_LANE', 
+  'data access', 
+  'true' 
+
+EXEC sp_serveroption 
+  'TITAN_LANE', 
+  'rpc', 
+  'true' 
+
+EXEC sp_serveroption 
+  'TITAN_LANE', 
+  'rpc out', 
+  'true' 
+
+EXEC sp_serveroption 
+  'TITAN_LANE', 
+  'collation compatible', 
+  'true' 
+
+USE Lane_TRAMS
+
+go 
+
+--4 
+PRINT 'Beginning #4: Adding Linked Server login...' 
+
+EXEC sp_addlinkedsrvlogin 
+  @rmtsrvname='TITAN_LANE',--this is the name of the linked server 
+  @useself='false', 
+  --True means that sql server logins are used, false means that the rmtuser and rmtpassword are used 
+  --@locallogin='k1ngdr3w'--'Rich-PC\Richard', --login on the local server, default is NULL. 
+  @rmtuser='Thai_User',--name of the remote user 
+  @rmtpassword='Thai_Test' --remote user password 
+go 
+
+--5 
+PRINT 'Beginning #5: Showing Thai_HOBS database...' 
+
+go 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.Hotels') AS 
+       passthrough 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.Bookings') AS 
+       passthrough 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.Guests') AS 
+       passthrough 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.Rooms') AS 
+       passthrough 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.TaxRates') AS 
+       passthrough 
+
+go 
+
+--Drop this if it exists already 
+IF EXISTS (SELECT NAME 
+           FROM   SYSOBJECTS 
+           WHERE  NAME = 'sp_InsertPerson_LANE' 
+                  AND type = 'P') 
+  DROP PROC sp_insertperson_lane 
+
+go 
+
+--6a 
+PRINT 'Beginning #6ba: Creating sp_InsertPerson_LANE...' 
+
+go 
+
+CREATE PROC sp_InsertPerson_LANE 
+  --@p_PersonId int, 
+  @p_PersonFirst      NVARCHAR(50), 
+  @p_PersonLast       NVARCHAR(50), 
+  @p_PersonAddress    VARCHAR(200), 
+  @p_PersonCity       VARCHAR(50), 
+  @p_PersonPostalCode VARCHAR(10) 
+AS 
+    INSERT OPENQUERY (TITAN_LANE, 'SELECT GuestFirstName, GuestLastName, GuestAddress, GuestCity, GuestPostalCode FROM THAI_Hobs.dbo.Guests') 
+    VALUES (@p_PersonFirst, 
+            @p_PersonLast, 
+            @p_PersonAddress, 
+            @p_PersonCity, 
+            @p_PersonPostalCode) 
+
+go 
+
+--6b 
+PRINT 'Beginning #6b:Executing sp_InsertPerson_LANE...' 
+
+EXEC sp_InsertPerson_LANE 
+  --@p_PersonId = 22111, 
+  @p_PersonFirst = 'Andrew', 
+  @p_PersonLast = 'Lane', 
+  @p_PersonAddress = '577 F St', 
+  @p_PersonCity = 'Salt Lake City', 
+  @p_PersonPostalCode = '84106' 
+
+go 
+
+SELECT * 
+FROM   Openquery (TITAN_LANE, 'SELECT * FROM Thai_HOBS.dbo.Guests') AS 
+       passthrough 
+
+go 
+
+--7 
+PRINT 
+'Beginning #7: Showing property, rate, and room information from both databases...' 
+
+go 
+
+SELECT PropertyName                                        'Property Name', 
+       UnitTypeDescription                                 'Unit Type', 
+       '$' 
+       + CONVERT(VARCHAR(20), Cast(UnitRate AS MONEY), 1 ) AS Rate 
+FROM   (SELECT p.PropertyName, 
+               ut.UnitTypeDescription, 
+               ur.UnitRate 
+        FROM   PROPERTY AS p 
+               JOIN UNITRATE AS ur 
+                 ON p.PropertyID = ur.PropertyID 
+               JOIN UNITTYPE AS ut 
+                 ON ut.UnitTypeID = ur.UnitTypeID 
+        WHERE  ( ( '1 July 2015' <= ur.UnitRateEndDate ) 
+                 AND ( '1 July 2015' >= ur.UnitRateBeginDate ) ) 
+        UNION 
+        SELECT * 
+        FROM   Openquery (TITAN_LANE, 
+               'SELECT h.HotelName, r.RoomType,  (r.RoomRackRate / 35.69)  FROM Thai_HOBS.dbo.Hotels h  JOIN Thai_HOBS.dbo.Rooms r ON h.HotelNo = r.HotelNo') 
+               AS passthrough) res 
+ORDER  BY PropertyName 
+
+go 
+
+--8 
+PRINT 
+'Beginning #8: Showing the ReservationID, Guest Last Name, Formatted Quoted Rate, and Check-in Date from Both Databases...' 
+
+go 
+
+SELECT ReservationID, 
+       GuestLast, 
+       '$' 
+       + CONVERT(VARCHAR(20), Cast(QuotedRate AS MONEY), 1 ) AS QuotedRate, 
+       CheckinDate 
+FROM   (SELECT r.ReservationID  AS ReservationID, 
+               p.PersonLast     AS GuestLast, 
+               r.ResQuotedRate  AS QuotedRate, 
+               r.ResCheckinDate AS CheckinDate 
+        FROM   RESERVATION r 
+               JOIN PERSON p 
+                 ON p.PersonID = r.PersonID 
+        UNION 
+        SELECT * 
+        FROM   Openquery (TITAN_Lane, 
+               'SELECT b.BookingID as ReservationID, g.GuestLastName as GuestLast, (b.QuotedRate / 35.69) as QuotedRate, b.CheckInDate FROM Thai_HOBS.dbo.Bookings b JOIN Thai_HOBS.dbo.Guests g ON g.GuestNo = b.GuestNo') 
+               AS passthrough) tmp 
+ORDER  BY GuestLast 
+
+--9 
+PRINT 
+'Beginning 9: Dropping Lane_TRAMS DB and dropping linked server with logins' 
+
+go 
+
+USE master 
+
+go 
+
+DROP DATABASE lane_trams; 
+
+go 
+
+EXEC master.dbo.sp_dropserver 
+  @server='TITAN_LANE', 
+  @droplogins='droplogins' 
+
+go 
+
+--PART 2 
+PRINT 
+'Beginning Part 2 #1: Apply OPENXM using Element-Centric mapping and show guestid, guestfirst, guestlast, and Check-in ONLY for each guest' 
+
+go 
+
+PRINT 
+'Beginning Part 2 #2 - Inserting the XML GuestId, GuestFirst, GuestLast, Address, City, Postal Code, Country, Phone, E-mail into TRAMS Person Table...' 
+
+go 
+
+DECLARE @opdoc INT 
+DECLARE @myxml NVARCHAR(2000) 
+
+SET @myxml ='<TOP><GUEST> <GuestID>2331</GuestID> <GuestFirst>Braden</GuestFirst> <GuestLast>Gramse</GuestLast> <RESERVATIONDETAIL> <CheckInDate>2016-04-02</CheckInDate> <Nights>2</Nights> </RESERVATIONDETAIL> </GUEST> <GUEST> <GuestID>2263</GuestID> <GuestFirst>Danyell</GuestFirst> <GuestLast>Reno</GuestLast> <RESERVATIONDETAIL> <CheckInDate>2016-04-05</CheckInDate> <Nights>2</Nights> </RESERVATIONDETAIL> </GUEST> <GUEST> <GuestID>2280</GuestID> <GuestFirst>Brady</GuestFirst> <GuestLast>Adair</GuestLast> <RESERVATIONDETAIL> <CheckInDate>2015-06-11</CheckInDate> <Nights>3</Nights> </RESERVATIONDETAIL>  </GUEST></TOP>' 
+
+EXEC sp_xml_preparedocument 
+  @opdoc output, 
+  @myxml 
+
+SELECT * 
+FROM   OPENXML (@opdoc, '/TOP/GUEST', 0) 
+          WITH( guestid     VARCHAR(4) 'GuestID', 
+                guestfirst  VARCHAR(64) 'GuestFirst', 
+                guestlast   VARCHAR(64) 'GuestLast', 
+                checkindate SMALLDATETIME 'RESERVATIONDETAIL/CheckInDate' ) 
+
+--2.2 
+USE Lane_TRAMS
+
+SET IDENTITY_INSERT person ON 
+
+INSERT INTO PERSON 
+            (PersonID, 
+             PersonFirst, 
+             PersonLast, 
+             PersonAddress, 
+             PersonCity, 
+             PersonState, 
+             PersonPostalCode, 
+             PersonCountry, 
+             PersonPhone, 
+             PersonEmail) 
+SELECT GuestID, 
+       GuestFirst, 
+       GuestLast, 
+       '577 F ST', 
+       'Salt Lake City', 
+       'UT', 
+       '84101', 
+       'USA', 
+       '911', 
+       'andrew@andrew.com' 
+FROM   OPENXML (@opdoc, '/TOP/GUEST', 0) 
+          WITH( guestid    VARCHAR(4) 'GuestID', 
+                guestfirst VARCHAR(64) 'GuestFirst', 
+                guestlast  VARCHAR(64) 'GuestLast' ) 
+
+go 
+
+PRINT 'Finishing up.... Showing all records from PERSON...' 
+
+SELECT * 
+FROM   PERSON 

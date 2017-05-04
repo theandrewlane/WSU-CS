@@ -1,0 +1,355 @@
+-- TRAMS Creation Script
+-- Andrew Lane 2/2/2016
+-- CS3550
+
+ 
+USE Master
+ --If the DB already exists, drop it before running the rest of this script
+IF  EXISTS ( SELECT * FROM sysdatabases WHERE name = 'Lane_TRAMS')
+DROP Database Lane_TRAMS
+GO
+
+CREATE DATABASE Lane_TRAMS
+
+ON Primary
+(NAME = 'Lane_TRAMS', -- Virtual Object Name --
+ FILENAME = 'C:\Stage\Lane_TRAMS.mdf',
+ SIZE = 10MB,
+ MAXSIZE = 50MB, 
+ FILEGROWTH = 10% --5MB incriments --
+)
+
+--Enable logging and specify params--
+LOG ON 
+
+(NAME = 'Lane_TRAMS_LOG', -- Virtual Object Name--
+  FILENAME = 'C:\Stage\Lane_TRAMS.ldf',
+ SIZE = 2MB,
+ MAXSIZE = 5MB, 
+ FILEGROWTH = 500KB
+)
+
+GO
+
+
+
+
+--Switch to the newly built DB
+USE Lane_TRAMS 
+
+--Table Creation
+CREATE TABLE FOLIOTRANSACTION --no fks
+( TransID bigint	NOT NULL IDENTITY(1,1), --pk
+  TransDate datetime NOT NULL,
+  TransAmount smallmoney  NOT NULL,
+  TransDescription varchar(50)	NOT NULL,
+  TransCategoryID	smallint	NOT NULL,
+  FolioID int NOT NULL
+  )
+
+CREATE TABLE FOLIO
+( FolioID int	NOT NULL IDENTITY(1,1), --pk
+  FolioStatus char(1) NOT NULL,
+  FolioRate smallmoney NOT NULL, --fk
+  FolioCheckInDate smalldatetime NOT NULL,
+  FolioCheckOutDate smalldatetime  NOT NULL,
+  UnitID smallint NOT NULL,
+  ReservationID int NOT NULL
+)
+
+CREATE TABLE RESERVATION
+
+( ReservationID int	NOT NULL IDENTITY(1,1), --pk
+  ResDate smalldatetime NOT NULL,
+  ResStatus char(1) NOT NULL,
+  ResCheckInDate date  NOT NULL,
+  ResNights tinyint NOT NULL, --fk
+  ResQuotedRate	smallmoney NOT NULL,
+  ResDepositPaid	smallmoney	NOT NULL,
+  ResCCAuth	varchar(25)	NOT NULL,
+  UnitRateID	smallint	NOT NULL,
+  PersonID	int	NOT NULL,
+)
+
+CREATE TABLE PERSON 
+( PersonID int	NOT NULL, --pk
+  PersonFirst nvarchar(50) NOT NULL, --fk2
+  PersonLast nvarchar(50) NOT NULL, --fk1
+  PersonAddress	varchar(200)	NOT NULL,
+  PersonCity	varchar(50)	NOT NULL,
+  PersonState char(2)	NOT NULL,
+  PersonPostalCode varchar(10)	NOT NULL,
+PersonCountry varchar(20) NOT NULL,
+PersonPhone varchar(20)NOT NULL,
+PersonEmail varchar(200) NOT NULL
+)
+
+CREATE TABLE UNITOWNER
+( UnitID smallint NOT NULL, --pk
+  PersonID int NOT NULL, --fk1
+  OwnerStartDate date NOT NULL, --fk2
+  OwnerEndDate date, --fk2
+)
+
+CREATE TABLE UNIT
+( 
+ UnitID smallint	NOT NULL , --pk
+ UnitNumber varchar(5) NOT NULL,
+ PropertyID smallint NOT NULL,
+ UnitTypeID tinyint NOT NULL
+)
+
+CREATE TABLE UNITTYPE
+( 
+UnitTypeID tinyint  NOT NULL IDENTITY(1,1), --pk
+  UnitTypeDescription varchar(20) NOT NULL
+)
+
+CREATE TABLE UNITRATE
+( 
+ UnitRateID smallint NOT NULL IDENTITY(1,1), --pk2/fk2
+UnitRate smallmoney NOT NULL,
+UnitRateBeginDate date NOT NULL,
+UnitRateEndDate date NOT NULL,
+UnitRateDescription varchar(50) NOT NULL,
+UnitRateActive bit NOT NULL,
+  PropertyID smallint NOT NULL,
+  UnitTypeID tinyint NOT NULL
+)
+
+CREATE TABLE PROPERTY
+
+(   
+PropertyID smallint NOT NULL, --pk/fk
+   PropertyName varchar(50) NOT NULL,
+PropertyAddress varchar(200) NOT NULL,
+PropertyCity varchar(50) NOT NULL,
+PropertyState char(2) NOT NULL,
+PropertyPostalCode varchar(10) NOT NULL,
+PropertyCountry varchar(20) NOT NULL,
+PropertyPhone varchar(20) NOT NULL,
+PropertyMgmtFee decimal(4,2) NOT NULL,
+PropertyWebAddress varchar(100) NOT NULL,
+TaxLocationID smallint 
+)
+
+CREATE TABLE PROPERTYAMENITY
+( AmenityID smallint, --pk/fk
+  PropertyID smallint NOT NULL --fk1
+  
+)
+
+CREATE TABLE AMENITY
+
+(   AmenityID smallint NOT NULL IDENTITY(1,1), --pk/fk
+    AmenityDescription varchar(50) NOT NULL
+)
+
+CREATE TABLE TRANSCATEGORY
+( TransCategoryID smallint NOT NULL IDENTITY(1,1), --pk/fk
+  TransCategoryDescription varchar(50) NOT NULL,  --pk2/fk2
+ TransTaxType char(1) NOT NULL  --pk2/fk2
+)
+
+CREATE TABLE TAXLOCATION
+( TaxLocationID smallint NOT NULL IDENTITY(1,1), --pk
+  TaxCounty varchar(50) NOT NULL,
+	TaxState char(2) NOT NULL 
+)
+
+CREATE TABLE TAXRATE
+( 
+TaxID int NOT NULL IDENTITY(1,1), --pk
+  TaxRate decimal(5,3)  NOT NULL,
+TaxType char(1) NOT NULL,
+TaxDescription varchar(50) NOT NULL,
+TaxStartDate date NOT NULL,
+TaxEndDate date,
+TaxLocationID smallint
+)
+
+CREATE TABLE UNITAMENITY
+( 
+AmenityID smallint NOT NULL, --pk
+UnitID smallint NOT NULL
+)
+
+--Alter all of the above tables and add PKs
+ALTER TABLE FOLIOTRANSACTION
+	ADD CONSTRAINT PK_TransID
+	PRIMARY KEY (TransID)
+
+ALTER TABLE FOLIO
+	ADD CONSTRAINT PK_FolioID
+	PRIMARY KEY (FolioID)
+
+ALTER TABLE TRANSCATEGORY
+	ADD CONSTRAINT PK_TransCategoryID
+	PRIMARY KEY (TransCategoryID)
+
+ALTER TABLE TAXLOCATION
+	ADD CONSTRAINT PK_TaxLocationID
+	PRIMARY KEY (TaxLocationID)
+
+ALTER TABLE TAXRATE
+	ADD CONSTRAINT PK_TaxID
+	PRIMARY KEY (TaxID)
+
+ALTER TABLE PROPERTY
+	ADD CONSTRAINT PK_PropertyID
+	PRIMARY KEY (PropertyID)
+
+ALTER TABLE AMENITY
+	ADD CONSTRAINT PK_AmenityID
+	PRIMARY KEY (AmenityID)
+
+ALTER TABLE UNITRATE
+	ADD CONSTRAINT PK_UnitRateID
+	PRIMARY KEY (UnitRateID)
+
+ALTER TABLE RESERVATION
+	ADD CONSTRAINT PK_ReservationID
+	PRIMARY KEY (ReservationID)
+
+ALTER TABLE UNITTYPE
+	ADD CONSTRAINT PK_UnitTypeID
+	PRIMARY KEY (UnitTypeID)
+
+ALTER TABLE UNIT
+	ADD CONSTRAINT PK_UnitID
+	PRIMARY KEY (UnitID)
+
+ALTER TABLE PERSON
+	ADD CONSTRAINT PK_PersonID
+	PRIMARY KEY (PersonID)
+
+	
+--Alter table to add FKs
+--Do the M:M breakups First
+
+ALTER TABLE PROPERTYAMENITY
+	ADD CONSTRAINT FK_AmenityID
+	FOREIGN KEY (AmenityID) REFERENCES AMENITY (AmenityID)
+
+ALTER TABLE PROPERTYAMENITY
+	ADD CONSTRAINT FK_PropertyID
+	FOREIGN KEY (PropertyID) REFERENCES PROPERTY (PropertyID)
+
+ALTER TABLE UNITAMENITY
+	ADD CONSTRAINT FK_UnitAmenityHasAmenityID
+	FOREIGN KEY (AmenityID) REFERENCES AMENITY (AmenityID)
+
+ALTER TABLE UNITAMENITY
+	ADD CONSTRAINT FK_UnitAmenityHasUnitID
+	FOREIGN KEY (UnitID) REFERENCES UNIT (UnitID)
+
+ALTER TABLE UNITOWNER
+	ADD CONSTRAINT FK_UnitID
+	FOREIGN KEY (UnitID) REFERENCES UNIT (UnitID)
+
+--Add Reminaing FKs
+ALTER TABLE UNITOWNER
+	ADD CONSTRAINT FK_PersonID
+	FOREIGN KEY (PersonID) REFERENCES PERSON (PersonID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE FOLIOTRANSACTION
+	ADD CONSTRAINT FK_TransCategoryID
+	FOREIGN KEY (TransCategoryID) REFERENCES TRANSCATEGORY (TransCategoryID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE FOLIOTRANSACTION
+	ADD CONSTRAINT FK_FolioID
+	FOREIGN KEY (FolioID) REFERENCES FOLIO (FolioID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE TAXRATE
+	ADD CONSTRAINT FK_TaxLocationID
+	FOREIGN KEY (TaxLocationID) REFERENCES TAXLOCATION (TaxLocationID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE FOLIO
+	ADD CONSTRAINT FK_ReservationID
+	FOREIGN KEY (ReservationID) REFERENCES RESERVATION (ReservationID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE PROPERTY
+	ADD CONSTRAINT FK_PropTaxLocationID
+	FOREIGN KEY (TaxLocationID) REFERENCES TAXLOCATION (TaxLocationID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE UNITRATE
+	ADD CONSTRAINT FK_URPropertyID
+	FOREIGN KEY (PropertyID) REFERENCES PROPERTY (PropertyID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE UNITRATE
+	ADD CONSTRAINT FK_URUnitTypeID
+	FOREIGN KEY (UnitTypeID) REFERENCES UNITTYPE (UnitTypeID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE UNIT
+    ADD CONSTRAINT FK_UnitTypeID
+	FOREIGN KEY (UnitTypeID) REFERENCES UNITTYPE (UnitTypeID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE RESERVATION
+	ADD CONSTRAINT FK_UnitRateID
+	FOREIGN KEY (UnitRateID) REFERENCES UNITRATE (UnitRateID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+ALTER TABLE RESERVATION
+	ADD CONSTRAINT FK_ResPersonID
+	FOREIGN KEY (PersonID) REFERENCES PERSON (PersonID)
+	ON UPDATE Cascade
+	ON DELETE Cascade
+
+--INSERTS!
+	
+
+BULK INSERT AMENITY from 'C:\stage\Amenity.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT FOLIO from 'C:\stage\Folio.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT FOLIOTRANSACTION from 'C:\stage\FOLIOTRANSACTION.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT PERSON from 'C:\stage\PERSON.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT PROPERTY from 'C:\stage\PROPERTY.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT PROPERTYAMENITY from 'C:\stage\PROPERTYAMENITY.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT RESERVATION from 'C:\stage\RESERVATION.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT TAXLOCATION from 'C:\stage\TAXLOCATION.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT TAXRATE from 'C:\stage\TAXRATE.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT TRANSCATEGORY from 'C:\stage\TRANSCATEGORY.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT UNIT from 'C:\stage\UNIT.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT UNITAMENITY from 'C:\stage\UnitAmenity.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT UNITOWNER from 'C:\stage\UNITOWNER.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT UNITRATE from 'C:\stage\UNITRATE.txt' WITH (FIELDTERMINATOR = '|')
+BULK INSERT UNITTYPE from 'C:\stage\UNITTYPE.txt' WITH (FIELDTERMINATOR = '|')
+
+
+--Check Constraints!
+ALTER TABLE PERSON
+	ADD CONSTRAINT CK_PersonFirst
+	CHECK (LEN(PersonFirst) > 1)
+
+ALTER TABLE RESERVATION
+	ADD CONSTRAINT CK_ResStatus
+	CHECK (LEN(ResStatus) = 1)
+GO
+
+--Add Defaults
+ALTER TABLE PROPERTY
+	ADD CONSTRAINT DK_PropertyWebAddress
+	DEFAULT 'No Web Address' FOR PropertyWebAddress
+
+ALTER TABLE FOLIOTRANSACTION
+	ADD CONSTRAINT DK_TransDescription
+	DEFAULT 'Credit/Debit' FOR TransDescription
+

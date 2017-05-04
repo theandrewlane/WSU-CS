@@ -1,0 +1,94 @@
+/*
+ * Andrew Lane
+ * CS2550
+ * SQL Assignment #8
+ * 11/7/15
+*/
+
+
+--1 
+SELECT s.student_id, 
+       s.first_name, 
+       s.last_name 
+FROM   student s, 
+       enrollment z 
+WHERE  s.student_id = z.student_id 
+GROUP  BY s.student_id, 
+          s.first_name, 
+          s.last_name 
+HAVING Count(*) = (SELECT Max(enrolled) 
+                   FROM   (SELECT s.student_id, 
+                                  s.first_name, 
+                                  Count(z.enroll_date) AS ENROLLED 
+                           FROM   student s, 
+                                  enrollment z 
+                           WHERE  s.student_id = z.student_id 
+                           GROUP  BY s.student_id, 
+                                     s.first_name)) 
+ORDER  BY s.first_name; 
+
+--2 
+SELECT DISTINCT inst.first_name, 
+                inst.last_name, 
+                inst.phone 
+FROM   student stu 
+       JOIN enrollment enr 
+         ON stu.student_id = enr.student_id 
+       JOIN section sec 
+         ON enr.section_id = sec.section_id 
+       JOIN instructor inst 
+         ON sec.instructor_id = inst.instructor_id 
+            AND stu.zip = inst.zip 
+ORDER  BY inst.first_name; 
+
+--3 
+SELECT s.first_name, 
+       s.last_name, 
+       w.city, 
+       'Student' "ROLE" 
+FROM   student s 
+       JOIN zipcode w 
+         ON s.zip = w.zip 
+WHERE  s.zip = 10025 
+UNION 
+SELECT b.first_name, 
+       b.last_name, 
+       g.city, 
+       'Instructor' 
+FROM   instructor b 
+       JOIN zipcode g 
+         ON b.zip = g.zip 
+WHERE  b.zip = 10025 
+ORDER  BY "role", 
+          last_name, 
+          first_name; 
+
+--4 
+SELECT s.location, 
+       Count(DISTINCT s.section_id) AS SECTIONS, 
+       Count(e.student_id) AS STUDENTS 
+FROM   section s 
+       JOIN enrollment e 
+         ON s.section_id = e.section_id 
+WHERE  EXISTS (SELECT  section_id 
+               FROM   section 
+               UNION ALL
+               SELECT DISTINCT section_id 
+               FROM  enrollment) 
+GROUP  BY s.location
+ORDER BY s.location;
+
+--5 
+SELECT GRADE_TYPE_CODE,TO_CHAR((NUMERIC_GRADE),99.99) AS GRADE
+FROM GRADE
+WHERE STUDENT_ID = 127 AND SECTION_ID = 95
+union all
+SELECT 'Average for student 127' AS GRADE_TYPE_CODE, (SELECT TO_CHAR((AVG(NUMERIC_GRADE)),99.99) FROM GRADE WHERE STUDENT_ID = '127' AND SECTION_ID = 95) AS GRADE
+FROM
+(
+    SELECT AVG(NUMERIC_GRADE) AS GRADE
+FROM GRADE
+WHERE STUDENT_ID = 127 AND SECTION_ID = 95
+GROUP BY GRADE_TYPE_CODE
+)
+order by 1 desc, 2 desc;

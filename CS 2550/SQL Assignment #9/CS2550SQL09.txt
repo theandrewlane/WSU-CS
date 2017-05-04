@@ -1,0 +1,112 @@
+/*
+ * Andrew Lane
+ * CS2550
+ * SQL Assignment #9
+ * 11/15/15
+*/
+
+
+--1 
+SELECT w.first_name, 
+       w.last_name, 
+       NULLIF(Count(s.section_id), 0) AS COUNTED_SECTIONS 
+FROM   instructor w 
+       LEFT OUTER JOIN section s 
+                    ON w.instructor_id = s.instructor_id 
+GROUP  BY w.first_name, 
+          w.last_name 
+ORDER  BY w.last_name; 
+
+--2 
+SELECT w.course_no 
+FROM   course w, 
+       section z, 
+       grade s 
+WHERE  z.course_no = w.course_no 
+       AND s.section_id = z.section_id 
+GROUP  BY w.course_no 
+HAVING Count(DISTINCT s.grade_type_code) = (SELECT 
+       Count(DISTINCT grade_type_code) 
+                                            FROM   grade) 
+ORDER  BY w.course_no; 
+
+--3 
+SELECT lt.zip, 
+       Count(students) AS STUDENTS 
+FROM   zipcode lt 
+       LEFT OUTER JOIN (SELECT z.zip, 
+                               s.student_id, 
+                               e.enroll_date AS STUDENTS 
+                        FROM   student s 
+                               LEFT JOIN zipcode z 
+                                      ON s.zip = z.zip 
+                               LEFT JOIN enrollment e 
+                                      ON s.student_id = e.student_id 
+                        WHERE  z.state = 'NY' 
+                               AND z.city = 'Flushing' 
+                        GROUP  BY z.zip, 
+                                  s.student_id, 
+                                  e.enroll_date) rt 
+                    ON lt.zip = rt.zip 
+WHERE  lt.state = 'NY' 
+       AND lt.city = 'Flushing' 
+GROUP  BY lt.zip 
+ORDER  BY lt.zip; 
+
+--4 
+SELECT DISTINCT lt.course_no, 
+                lt.description, 
+                Nvl(Sum(enrollments), 0) AS ENROLLMENTS 
+FROM   course lt 
+       LEFT OUTER JOIN (SELECT DISTINCT c.course_no, 
+                                        c.description, 
+                                        w.student_id, 
+                                        Nvl(Count(e.enroll_date), 0) AS 
+                                        ENROLLMENTS 
+                        FROM   course c, 
+                               section s, 
+                               enrollment e, 
+                               student w 
+                        WHERE  c.course_no = s.course_no 
+                               AND s.section_id = e.section_id 
+                               AND e.student_id = w.student_id 
+                               AND description LIKE '%Java%' 
+                        GROUP  BY c.course_no, 
+                                  c.description, 
+                                  w.student_id 
+                        ORDER  BY c.course_no) rt 
+                    ON lt.course_no = rt.course_no 
+WHERE  lt.description LIKE '%Java%' 
+GROUP  BY lt.course_no, 
+          lt.description 
+ORDER  BY lt.course_no; 
+
+--5 
+SELECT lt.student_id, 
+       lt.first_name, 
+       lt.last_name, 
+       ( CASE 
+           WHEN To_char(Sum(enrollments)) = 0 THEN 'None' 
+           ELSE To_char(Sum(enrollments)) 
+         END ) ENROLLMENTS 
+FROM   student lt 
+       LEFT OUTER JOIN (SELECT s.student_id, 
+                               z.course_no, 
+                               Count(e.enroll_date) AS ENROLLMENTS 
+                        FROM   student s 
+                               LEFT JOIN enrollment e 
+                                      ON s.student_id = e.student_id 
+                               LEFT JOIN section z 
+                                      ON e.section_id = z.section_id 
+                        WHERE  s.phone LIKE '617%' 
+                        GROUP  BY s.student_id, 
+                                  z.course_no) rt 
+                    ON lt.student_id = rt.student_id 
+WHERE  lt.phone LIKE '617%' 
+GROUP  BY lt.student_id, 
+          lt.first_name, 
+          lt.last_name, 
+          enrollments 
+ORDER  BY lt.last_name, 
+          lt.first_name; 
+          

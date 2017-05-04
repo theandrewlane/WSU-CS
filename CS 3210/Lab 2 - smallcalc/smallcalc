@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+#Andrew Lane
+#CS3210
+#Lab3
+
+function promptInput(){
+printf "Enter an expression: ";
+read userInput
+if [[ -z "${userInput}" ]]; then
+   echo "USAGE: ./smallcal <EXPR>"
+   exit 1
+elif [ "${userInput}" = "exit" ]; then
+    echo 'Exiting...'
+    exit 0
+fi
+
+echo Expr: ${userInput} Answer: $((userInput))
+promptInput
+}
+
+#runit
+promptInput

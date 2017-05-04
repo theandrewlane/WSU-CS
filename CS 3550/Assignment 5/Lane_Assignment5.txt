@@ -1,0 +1,188 @@
+-- TRAMS Assignment 5
+-- Andrew Lane 2/14/2016
+-- CS3550
+
+USE Lane_TRAMS 
+
+DECLARE @PERSON  smallint
+
+PRINT 'Beginning #1 - Displaying all the UnitRateIDs, UnitRates, UnitTypeDescriptions, and the UnitTypeIDs valid on 7 July 2015 at the Grand Oasis Resort'
+GO
+
+--1 
+SELECT ur.UnitRateID 'Unit Rate ID', ur.UnitRate 'Unit Rate', ut.UnitTypeDescription 'Unit Type Description', u.UnitTypeID 'Unit Type ID'
+FROM UNITRATE ur
+	JOIN UNITTYPE as UT ON ut.UnitTypeID = ur.UnitTypeID
+	JOIN UNIT as U on ut.UnitTypeID = u.UnitTypeID
+WHERE u.PropertyID = 11000;
+GO
+
+--2
+PRINT '';
+PRINT 'Beginning #2 - Displaying the Lodging Tax Rate valid on July 7th, 2015'
+GO
+SELECT p.PropertyID 'Property ID', t.TaxType 'Tax Type', t.TaxRate 'Tax Rate'
+FROM PROPERTY p
+	JOIN TAXLOCATION as tl on tl.TaxLocationID = p.TaxLocationID
+	JOIN TAXRATE as t on tl.TaxLocationID = t.TaxLocationID
+WHERE t.TaxType = 'L' AND p.PropertyID = 11000 AND t.TaxStartDate < '2015-07-07' and t.TaxEndDate > '2015-07-07';
+GO
+
+--3
+PRINT '';
+PRINT 'Beginning #3a - Adding Andrew Lane as a new person in the DB';
+GO
+DECLARE @PERSON  smallint
+INSERT INTO PERSON (
+PersonFirst, PersonLast, PersonAddress, PersonCity, PersonState, PersonPostalCode, PersonCountry, PersonPhone, PersonEmail
+)
+VALUES (
+'Andrew', 'Lane', '1261 E Parkway Ave', 'Salt Lake City', 'UT', '84106', 'USA', '4803588034', 'andrew.bryan12@live.com'
+)
+SET @PERSON = @@IDENTITY;
+GO
+
+PRINT '';
+PRINT 'Beginning #3b - Adding new reservation for Andrew Lane at the Grand Oasis for July 7, 2105 for 3 nights';
+GO
+
+INSERT INTO RESERVATION (
+ResDate, ResStatus, ResCheckinDate, ResNights, ResQuotedRate, ResDepositPaid, ResCCAuth, UnitRateID, PersonID
+)
+VALUES(
+getDate(), 'A', '2015-07-07', '3', ((.1125 * 149) + 149), ((.1125 * 149) + 149), 'pending', 4, @@IDENTITY
+);
+GO
+
+PRINT '';
+PRINT 'Beginning #3c - Show changes from #3b';
+GO
+SELECT * FROM RESERVATION;
+
+--4
+GO 
+PRINT '';
+PRINT 'Beginning #4a - Change rates from Zen Garden Resort';
+GO
+UPDATE UNITRATE 
+SET UnitRate = FLOOR(UnitRate - (UnitRate * .05)) 
+WHERE PropertyID = '16000' AND UnitRateDescription LIKE '%High%';
+GO
+UPDATE UNITRATE
+SET UnitRate = CEILING(UnitRate + (UnitRate * .05)) 
+WHERE PropertyID = '16000' AND UnitRateDescription LIKE '%Low%';
+GO
+PRINT '';
+PRINT 'Beginning #4b - Display changes in rates for Zen Garden Resort';
+GO
+SELECT * FROM UNITRATE WHERE PropertyID = '16000';
+
+--5
+GO
+PRINT '';
+PRINT 'Beginning #5 - Display property name, unit type description, and rental rack rate of all sutdio and 1 bedroom units priced at or below $199 per night'
+GO
+CREATE VIEW vw_UnitsLessThan199PerNight
+AS
+SELECT p.PropertyName 'Property Name', ut.UnitTypeDescription 'Unit Type Description',  '$' + CONVERT(varchar(20), ur.UnitRate,1) as 'Rack Rate'
+FROM PROPERTY p
+	JOIN UNITRATE as ur ON p.PropertyID = ur.PropertyID
+	JOIN UNITTYPE as ut ON ut.UnitTypeID = ur.UnitTypeID
+WHERE ur.UnitRateBeginDate < getDate() AND ur.UnitRateEndDate > getDate() AND ur.UnitRate <= 199.00 AND (ut.UnitTypeID = 1 OR ut.UnitTypeID = 2);
+
+GO
+SELECT * FROM vw_UnitsLessThan199PerNight;
+
+--6
+GO
+PRINT '';
+PRINT 'Beginning #6 - List the property name and the unit count for each property that has a "refrigerator" or "fridge" as a unit amenity';
+GO
+CREATE VIEW vw_UnitsWithFridges
+AS
+SELECT 
+	LEFT (p.PropertyName, CHARINDEX(' ', p.PropertyName) -1) as Property,
+	COUNT(a.AmenityDescription) AS 'Units With A Fridge'
+FROM PROPERTY p
+	JOIN UNITRATE AS ur ON p.PropertyID = ur.PropertyID
+	JOIN UNITTYPE AS ut ON ut.UnitTypeID = ur.UnitTypeID
+	JOIN UNIT AS u ON ut.UnitTypeID = u.UnitTypeID
+	JOIN UNITAMENITY as ua ON u.UnitID = ua.UnitID
+	JOIN AMENITY as a ON ua.AmenityID = a.AmenityID
+WHERE (a.AmenityDescription LIKE '%fridge%') OR (a.AmenityDescription LIKE '%frige%')
+GROUP BY p.PropertyName;
+GO
+SELECT * FROM vw_UnitsWithFridges;
+
+--7
+GO
+PRINT '';
+PRINT 'Beginning #7 - Display the property name, average length of stay(for each property), for reservations in June (Sorted by Property Name)';
+GO
+
+CREATE VIEW vw_JuneAverageStays
+AS
+SELECT p.PropertyName 'Property Name', AVG(CAST (r.ResNights AS decimal)) 'Average Length of Stay'
+FROM PROPERTY p
+	JOIN UNITRATE AS ur ON p.PropertyID = ur.PropertyID
+	JOIN RESERVATION AS r ON ur.UnitRateID = r.UnitRateID
+WHERE DatePart("M", r.ResCheckInDate) = 2
+Group BY p.PropertyName --, r.ResNights
+GO
+SELECT * FROM vw_JuneAverageStays
+
+--8 (Should return 27 rows!)
+GO
+PRINT '';
+PRINT 'Beginning #8 - List the person, unit type description, and arrival/departure date for all Monday-Thursday reservations';
+GO
+CREATE VIEW vw_WeekDayReservations
+AS
+SELECT CONCAT(p.PersonLast, ', ', p.PersonFirst) 'Customer', ut.UnitTypeDescription 'Unit Type Description', 
+UPPER(SUBSTRING(CONVERT(varchar, r.ResCheckInDate, 9), 1, 11)) 'Check In Date', 
+UPPER(SUBSTRING(CONVERT(varchar, (DATEADD(DAY, r.ResNights, r.ResCheckInDate)), 9),1,11)) 'Check Out Date'
+FROM PERSON p
+	JOIN RESERVATION AS r ON p.PersonID = r.PersonID
+	JOIN UNITRATE as ur ON ur.UnitRateID = r.UnitRateID
+	JOIN UNITTYPE as ut ON ut.UnitTypeID = ur.UnitTypeID
+WHERE DatePart(dw, r.ResCheckInDate) IN (2,3,4,5);
+GO
+SELECT * FROM vw_WeekDayReservations;
+
+--9 (Should return 39 rows!)
+GO
+PRINT '';
+PRINT 'Beginning #9- List sum of all 2015 folio transactions grouped by Transaction Category and Month';
+GO
+
+CREATE VIEW vw_2015FolioTransactions
+AS
+SELECT '$' + CONVERT(varchar(20),SUM(ft.TransAmount)) 'Monthly Transaction Total', tg.TransCategoryDescription 'Transaction Category Description', (DateName(MONTH, ft.TransDate)) 'Transaction Month'
+FROM FOLIOTRANSACTION ft
+	JOIN TRANSCATEGORY as tg ON tg.TransCategoryID = ft.TransCategoryID
+WHERE DatePart(YEAR, ft.TransDate) = 2015
+Group By tg.TransCategoryDescription, (DateName(MONTH, ft.TransDate));
+
+GO
+SELECT * FROM vw_2015FolioTransactions;
+
+
+--10
+GO
+PRINT '';
+PRINT 'Beginning #10 - List the Property Name and management fee total for each property in May 2015';
+
+GO
+CREATE VIEW vw_2015PropManagementFees
+AS
+SELECT  p.PropertyName 'Property Name', format((sum(ft.TransAmount) * (p.PropertyMgmtFee) / 100) + sum(ft.TransAmount), 'c', 'en-us') 'Total Property Management Fees'
+FROM FOLIOTRANSACTION ft
+	JOIN TRANSCATEGORY AS tg ON tg.TransCategoryID = ft.TransCategoryID
+	JOIN FOLIO AS f on f.FolioID = ft.FolioID
+	JOIN RESERVATION as r on r.ReservationID = f.ReservationID
+	JOIN UNITRATE as ur ON ur.UnitRateID = r.UnitRateId
+	JOIN PROPERTY as p on p.PropertyID = ur.PropertyID
+WHERE DatePart(YEAR, ft.TransDate) = 2015 AND tg.TransTaxType = 'L'
+GROUP BY p.PropertyName, p.PropertyMgmtFee;
+GO
+SELECT * FROM vw_2015PropManagementFees;
